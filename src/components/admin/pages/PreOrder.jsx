@@ -1,0 +1,1459 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
+import { ChevronDown, Edit2, X, MapPin, Check, Package, Truck, User } from 'lucide-react';
+import { getAssignmentOptions, updateStage1Assignment, getOrderAssignment } from '../../../api/orderAssignmentApi';
+import { getOrderById } from '../../../api/orderApi';
+import { getAllFarmers } from '../../../api/farmerApi';
+import { getAllSuppliers } from '../../../api/supplierApi';
+import { getAllThirdParties } from '../../../api/thirdPartyApi';
+import { getAllLabours } from '../../../api/labourApi';
+import { getAllDrivers } from '../../../api/driverApi';
+import { getAllProducts } from '../../../api/productApi';
+import { getAvailableStock } from '../../../api/orderAssignmentApi';
+import { getVegetableAvailabilityByFarmer } from '../../../api/vegetableAvailabilityApi';
+import { createOrUpdatePreOrder } from '../../../api/preOrderApi';
+
+const PreOrder = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { id } = useParams();
+  const orderData = location.state?.orderData;
+  const [assignmentOptions, setAssignmentOptions] = useState({
+    farmers: [],
+    suppliers: [],
+    thirdParties: [],
+    labours: [],
+    drivers: []
+  });
+  const [productRows, setProductRows] = useState([]);
+  const [remainingRowAssignments, setRemainingRowAssignments] = useState({});
+  const [deliveryRoutes, setDeliveryRoutes] = useState([]);
+  const [orderDetails, setOrderDetails] = useState(orderData || null);
+  const [selectedType, setSelectedType] = useState('Box');
+  const [assignmentStatuses, setAssignmentStatuses] = useState({});
+  const [availableStock, setAvailableStock] = useState({});
+  const [farmerAvailability, setFarmerAvailability] = useState({});
+
+  // Fetch available stock and farmer availability on component mount
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const stockResponse = await getAvailableStock();
+        if (stockResponse.success) {
+          setAvailableStock(stockResponse.data);
+        }
+      } catch (error) {
+        console.error('Error fetching available stock:', error);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // Fetch farmer availability when farmers are loaded
+  useEffect(() => {
+    const fetchFarmerAvailability = async () => {
+      if (assignmentOptions.farmers.length === 0) return;
+      
+      const availabilityMap = {};
+      const today = new Date().toISOString().split('T')[0];
+      
+      for (const farmer of assignmentOptions.farmers) {
+        try {
+          const response = await getVegetableAvailabilityByFarmer(farmer.fid);
+          if (response.success && response.data) {
+            availabilityMap[farmer.fid] = response.data.filter(item => {
+              const fromDate = item.from_date;
+              const toDate = item.to_date;
+              return item.status === 'Available' && fromDate <= today && toDate >= today;
+            });
+          }
+        } catch (error) {
+          console.error(`Error fetching availability for farmer ${farmer.fid}:`, error);
+        }
+      }
+      
+      setFarmerAvailability(availabilityMap);
+    };
+
+    fetchFarmerAvailability();
+  }, [assignmentOptions.farmers]);
+
+  // Update selectedType when orderDetails changes
+  useEffect(() => {
+    if (orderDetails?.items?.length > 0) {
+      const packing = orderDetails.items[0].packing_type || "";
+      const hasWeight = /\d+\s*kg/i.test(packing);
+      if (hasWeight) {
+        if (/box/i.test(packing)) {
+          setSelectedType("Box");
+          return;
+        }
+        if (/bag/i.test(packing)) {
+          setSelectedType("Bag");
+          return;
+        }
+      }
+    }
+    setSelectedType("Box");
+  }, [orderDetails]);
+
+  // Helper function to create delivery route for an assignment
+  const createDeliveryRoute = (entity, entityType, row, assignedQty, isRemaining = false) => {
+    const routeId = isRemaining
+      ? `${entityType}-${entity.fid || entity.sid || entity.tpid}-${row.id}-remaining`
+      : `${entityType}-${entity.fid || entity.sid || entity.tpid}-${row.id}`;
+
+    let entityName = '';
+    let entityId = '';
+    let address = '';
+
+    if (entityType === 'farmer') {
+      entityName = entity.farmer_name;
+      entityId = entity.fid;
+      address = `${entity.address || ''}, ${entity.city || ''}, ${entity.state || ''} - ${entity.pin_code || ''}`;
+    } else if (entityType === 'supplier') {
+      entityName = entity.supplier_name;
+      entityId = entity.sid;
+      address = `${entity.address || ''}, ${entity.city || ''}, ${entity.state || ''} - ${entity.pin_code || ''}`;
+    } else if (entityType === 'thirdParty') {
+      entityName = entity.third_party_name;
+      entityId = entity.tpid;
+      address = `${entity.address || ''}, ${entity.city || ''}, ${entity.state || ''} - ${entity.pin_code || ''}`;
+    }
+
+    return {
+      routeId,
+      sourceId: `${entityType}-${entityId}-${row.id}${isRemaining ? '-remaining' : ''}`,
+      location: entityName,
+      address: address.trim(),
+      product: row.product_name || row.product,
+      quantity: assignedQty || 0,
+      oiid: row.id,
+      entityType,
+      entityId,
+      driver: '',
+      isRemaining
+    };
+  };
+
+  // Helper function to update or add delivery route
+  const updateDeliveryRoute = (newRoute) => {
+    setDeliveryRoutes(prev => {
+      const existingIndex = prev.findIndex(r => r.routeId === newRoute.routeId);
+      if (existingIndex >= 0) {
+        const updated = [...prev];
+        updated[existingIndex] = { ...updated[existingIndex], ...newRoute };
+        return updated;
+      } else {
+        return [...prev, newRoute];
+      }
+    });
+  };
+
+  // Helper function to remove delivery route
+  const removeDeliveryRoute = (routeId) => {
+    setDeliveryRoutes(prev => prev.filter(r => r.routeId !== routeId));
+  };
+
+  // Helper function to remove all routes for a specific row
+  const removeRoutesForRow = (oiid, isRemaining = false, specificKey = null) => {
+    setDeliveryRoutes(prev => prev.filter(route => {
+      // For remaining rows with specific key
+      if (specificKey) {
+        return !route.routeId.includes(specificKey);
+      }
+      // For main rows
+      if (!isRemaining) {
+        return route.oiid !== oiid || route.isRemaining;
+      }
+      // For remaining rows (remove all remaining for this oiid)
+      return route.oiid !== oiid || !route.isRemaining;
+    }));
+  };
+
+  // Load assignment options without loading existing assignment data
+  useEffect(() => {
+    const loadAssignmentData = async () => {
+      try {
+        if (!orderDetails) {
+          try {
+            const orderResponse = await getOrderById(id);
+            setOrderDetails(orderResponse.data);
+          } catch (error) {
+            console.error('Error loading order details:', error);
+          }
+        }
+
+        const [farmersRes, suppliersRes, thirdPartiesRes, laboursRes, driversRes] = await Promise.all([
+          getAllFarmers(),
+          getAllSuppliers(),
+          getAllThirdParties(),
+          getAllLabours(),
+          getAllDrivers()
+        ]);
+
+        setAssignmentOptions({
+          farmers: farmersRes.data || [],
+          suppliers: suppliersRes.data || [],
+          thirdParties: thirdPartiesRes.data || [],
+          labours: laboursRes.data || [],
+          drivers: driversRes.data || []
+        });
+
+        await initializeFromOrderItems();
+      } catch (error) {
+        console.error('Error loading assignment data:', error);
+      }
+    };
+
+    loadAssignmentData();
+  }, [id, orderDetails]);
+
+  const initializeFromOrderItems = async () => {
+    let items = [];
+    if (orderDetails && orderDetails.items) {
+      items = orderDetails.items;
+    }
+
+    let allProductsList = [];
+    try {
+      const productsRes = await getAllProducts(1, 1000);
+      allProductsList = productsRes.success ? productsRes.data || [] : [];
+    } catch (error) {
+      console.error('Error fetching products:', error);
+    }
+
+    if (items.length > 0) {
+      const rows = items.map((item) => {
+        let currentPrice = 0;
+        const productName = (item.product_name || item.product || '').replace(/^\d+\s*-\s*/, '').trim();
+        const matchedProduct = allProductsList.find(p =>
+          p.product_name?.toLowerCase() === productName.toLowerCase()
+        );
+
+        if (matchedProduct?.current_price) {
+          currentPrice = parseFloat(matchedProduct.current_price);
+        }
+
+        return {
+          id: item.oiid,
+          product: (item.product || item.product_name || '')?.replace(/^\d+\s*-\s*/, ''),
+          product_name: (item.product_name || item.product || '')?.replace(/^\d+\s*-\s*/, ''),
+          quantity: `${item.net_weight || 0} kg`,
+          net_weight: parseFloat(item.net_weight) || 0,
+          assignedTo: '',
+          entityType: '',
+          marketPrice: currentPrice,
+          assignedQty: 0,
+          price: 0,
+          canEdit: true,
+        };
+      });
+      setProductRows(rows);
+    }
+
+    setDeliveryRoutes([]);
+  };
+
+  // Helper function to get price for a specific route
+  const getRoutePrice = (route) => {
+    if (!route.isRemaining) {
+      const mainRow = productRows.find(r => r.id === route.oiid);
+      return mainRow?.price || 0;
+    } else {
+      const remainingKey = Object.keys(remainingRowAssignments).find(key => {
+        const data = remainingRowAssignments[key];
+        return key.includes(route.oiid) &&
+          data.assignedTo === route.location &&
+          data.entityType === route.entityType;
+      });
+      return remainingKey ? (remainingRowAssignments[remainingKey]?.price || 0) : 0;
+    }
+  };
+
+  // Group delivery routes by driver for combined summary
+  const getGroupedDriverAssignments = () => {
+    const routesWithDrivers = deliveryRoutes.filter(route => route.driver);
+    const grouped = {};
+
+    routesWithDrivers.forEach(route => {
+      if (!grouped[route.driver]) {
+        grouped[route.driver] = {
+          driver: route.driver,
+          assignments: []
+        };
+      }
+
+      const price = parseFloat(getRoutePrice(route)) || 0;
+      const quantity = parseFloat(route.quantity) || 0;
+      const totalAmount = price * quantity;
+
+      grouped[route.driver].assignments.push({
+        ...route,
+        price,
+        totalAmount,
+        status: assignmentStatuses[route.routeId] || 'pending'
+      });
+    });
+
+    return Object.values(grouped);
+  };
+
+  const handleSaveStage1 = async () => {
+    try {
+      // Validate all product rows have required fields filled
+      const invalidRows = productRows.filter(row =>
+        !row.entityType || !row.assignedTo || !row.assignedQty || row.assignedQty <= 0 || !row.price || row.price <= 0
+      );
+
+      if (invalidRows.length > 0) {
+        alert('Please fill all mandatory fields (Entity Type, Name, Assigned Qty, and Price) for all products.');
+        return;
+      }
+
+      // Helper function to get entity ID
+      const getEntityId = (entityType, entityName) => {
+        if (entityType === 'farmer') {
+          const farmer = assignmentOptions.farmers.find(f => f.farmer_name === entityName);
+          return farmer?.fid;
+        } else if (entityType === 'supplier') {
+          const supplier = assignmentOptions.suppliers.find(s => s.supplier_name === entityName);
+          return supplier?.sid;
+        } else if (entityType === 'thirdParty') {
+          const thirdParty = assignmentOptions.thirdParties.find(tp => tp.third_party_name === entityName);
+          return thirdParty?.tpid;
+        }
+        return null;
+      };
+
+      // Merge main assignments and remaining assignments
+      const mergedAssignments = productRows.map(row => ({
+        ...row,
+        entityId: getEntityId(row.entityType, row.assignedTo)
+      }));
+
+      Object.entries(remainingRowAssignments).forEach(([key, remainingData]) => {
+        if (remainingData.assignedTo && remainingData.assignedQty) {
+          const originalId = key.split('-remaining')[0];
+          const originalIndex = mergedAssignments.findIndex(row => row.id == originalId);
+
+          if (originalIndex !== -1) {
+            mergedAssignments.push({
+              ...mergedAssignments[originalIndex],
+              id: originalId,
+              assignedTo: remainingData.assignedTo,
+              entityType: remainingData.entityType,
+              entityId: getEntityId(remainingData.entityType, remainingData.assignedTo),
+              assignedQty: remainingData.assignedQty,
+              price: remainingData.price,
+              tapeColor: remainingData.tapeColor || ''
+            });
+          }
+        }
+      });
+
+      // Add driver information to delivery routes
+      const routesWithDrivers = deliveryRoutes.map(route => ({
+        ...route,
+        driver: route.driver || ''
+      }));
+
+      // Generate summary data (same as what's displayed in the UI)
+      const groupedDriverAssignments = getGroupedDriverAssignments();
+      const summaryData = groupedDriverAssignments.length > 0 ? {
+        driverAssignments: groupedDriverAssignments.map(group => ({
+          driver: group.driver,
+          totalWeight: parseFloat(group.assignments.reduce((sum, a) => sum + parseFloat(a.quantity), 0).toFixed(2)),
+          totalAmount: parseFloat(group.assignments.reduce((sum, a) => sum + a.totalAmount, 0).toFixed(2)),
+          assignments: group.assignments.map(a => ({
+            product: a.product,
+            entityType: a.entityType,
+            entityName: a.location,
+            address: a.address,
+            quantity: parseFloat(a.quantity),
+            price: parseFloat(a.price),
+            totalAmount: parseFloat(a.totalAmount.toFixed(2)),
+            isRemaining: a.isRemaining || false,
+            oiid: a.oiid,
+            status: assignmentStatuses[a.routeId] || 'pending'
+          }))
+        })),
+        grandTotal: parseFloat(groupedDriverAssignments
+          .reduce((total, group) => total + group.assignments.reduce((sum, a) => sum + a.totalAmount, 0), 0)
+          .toFixed(2)),
+        totalCollections: deliveryRoutes.filter(route => route.driver).length,
+        totalDrivers: groupedDriverAssignments.length,
+        totalWeight: parseFloat(deliveryRoutes
+          .filter(route => route.driver)
+          .reduce((total, route) => total + (parseFloat(route.quantity) || 0), 0)
+          .toFixed(2))
+      } : null;
+
+      const stage1Data = {
+        collectionType: selectedType,
+        productAssignments: mergedAssignments,
+        deliveryRoutes: routesWithDrivers,
+        summaryData: summaryData
+      };
+
+      //console.log('Saving Stage 1 with data:', JSON.stringify(stage1Data, null, 2));
+
+      // Save to pre-order table
+      const preOrderData = {
+        order_id: id,
+        collection_type: selectedType,
+        product_assignments: mergedAssignments,
+        delivery_routes: routesWithDrivers,
+        summary_data: summaryData
+      };
+      
+      await createOrUpdatePreOrder(preOrderData);
+      alert('Pre-order saved successfully!');
+      navigate('/orders');
+    } catch (error) {
+      console.error('Error saving stage 1:', error);
+      alert('Failed to save stage 1 assignment. Please try again.');
+    }
+  };
+
+  // Create display rows with remaining quantities as separate rows
+  const getDisplayRows = () => {
+    const displayRows = [];
+
+    productRows.forEach((row, index) => {
+      displayRows.push({
+        ...row,
+        displayIndex: index,
+        isRemaining: false
+      });
+
+      // Calculate total remaining quantity
+      if (row.assignedQty > 0 && row.assignedQty < row.net_weight) {
+        let remainingQty = row.net_weight - row.assignedQty;
+
+        // Collect all remaining assignments for this product
+        const remainingKeys = Object.keys(remainingRowAssignments)
+          .filter(k => k.startsWith(`${row.id}-remaining`))
+          .sort();
+
+        // Display existing remaining assignments
+        remainingKeys.forEach(key => {
+          const data = remainingRowAssignments[key];
+          const assignedQty = parseFloat(data.assignedQty) || 0;
+
+          // Show the actual remaining needed, not the picked quantity
+          const displayQty = remainingQty > 0 ? remainingQty : 0;
+
+          displayRows.push({
+            id: key,
+            product: row.product,
+            product_name: row.product_name,
+            quantity: `${displayQty} kg`,
+            net_weight: displayQty,
+            assignedTo: data.assignedTo || '',
+            entityType: data.entityType || '',
+            marketPrice: data.marketPrice || row.marketPrice || 0,
+            assignedQty: assignedQty,
+            price: parseFloat(data.price) || 0,
+            canEdit: true,
+            displayIndex: index,
+            isRemaining: true,
+            originalRowIndex: index
+          });
+
+          // Deduct only up to the remaining quantity (excess goes to stock)
+          if (assignedQty > 0) {
+            remainingQty = Math.max(0, remainingQty - assignedQty);
+          }
+        });
+
+        // Add a new row for unassigned remaining quantity if there's still quantity left
+        const allRemainingHaveQty = remainingKeys.length === 0 ||
+          remainingKeys.every(k => (parseFloat(remainingRowAssignments[k].assignedQty) || 0) > 0);
+
+        if (remainingQty > 0 && allRemainingHaveQty) {
+          const newRemainingKey = `${row.id}-remaining-${remainingKeys.length}`;
+          const remainingData = remainingRowAssignments[newRemainingKey] || {};
+
+          displayRows.push({
+            id: newRemainingKey,
+            product: row.product,
+            product_name: row.product_name,
+            quantity: `${remainingQty} kg`,
+            net_weight: remainingQty,
+            assignedTo: remainingData.assignedTo || '',
+            entityType: remainingData.entityType || '',
+            marketPrice: remainingData.marketPrice || row.marketPrice || 0,
+            assignedQty: parseFloat(remainingData.assignedQty) || 0,
+            price: parseFloat(remainingData.price) || 0,
+            canEdit: true,
+            displayIndex: index,
+            isRemaining: true,
+            originalRowIndex: index
+          });
+        }
+      }
+    });
+
+    return displayRows;
+  };
+
+  const displayRows = getDisplayRows();
+
+  // Check if we have any routes with drivers assigned
+  const hasAssignedDrivers = deliveryRoutes.some(route => route.driver);
+  const groupedDriverAssignments = getGroupedDriverAssignments();
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-4 sm:p-6 lg:p-8">
+
+      {/* Order Information Table */}
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Order Information</h2>
+          <button className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors">
+          </button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Order ID</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Customer Name</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Phone Number</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Delivery Address</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Total Products</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.oid || id}</td>
+                <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.customer_name || 'N/A'}</td>
+                <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.phone_number || 'N/A'}</td>
+                <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.delivery_address || 'N/A'}</td>
+                <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.items?.length || 0} Items</td>
+                <td className="px-4 py-3">
+                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${orderDetails?.order_status === 'pending' ? 'bg-purple-100 text-purple-700' :
+                    orderDetails?.order_status === 'processing' ? 'bg-yellow-100 text-yellow-700' :
+                      orderDetails?.order_status === 'delivered' ? 'bg-emerald-600 text-white' :
+                        'bg-gray-100 text-gray-700'
+                    }`}>
+                    {orderDetails?.order_status ? orderDetails.order_status.charAt(0).toUpperCase() + orderDetails.order_status.slice(1) : 'N/A'}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+
+
+      {/* Stage 1 Section */}
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-2">
+          <h2 className="text-lg font-semibold text-gray-900">Stage 1: Product Collection from Sources(Box/Bag)</h2>
+          <div className="relative">
+            <select
+              value={selectedType}
+              onChange={(e) => setSelectedType(e.target.value)}
+              className="appearance-none px-4 py-2 pr-10 bg-white border-2 border-emerald-600 text-emerald-700 rounded-lg font-medium cursor-pointer hover:bg-emerald-50 transition-colors outline-none"
+            >
+              <option value="Box">Box</option>
+              <option value="Bag">Bag</option>
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-emerald-700 pointer-events-none" />
+          </div>
+        </div>
+        <p className="text-sm text-gray-600 mb-6">Assign order products to farmers, suppliers, and third parties for collection and delivery to packaging location</p>
+
+        {/* Product Table - Desktop */}
+        <div className="hidden lg:block overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Product</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Quantity Needed</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Market Price (₹/kg)</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Entity Type <span className="text-red-500">*</span></th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Name <span className="text-red-500">*</span></th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Entity Stock</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Picked Qty <span className="text-red-500">*</span></th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Price (₹) <span className="text-red-500">*</span></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {displayRows.map((row, index) => {
+                const productName = (row.product_name || row.product)?.replace(/^\d+\s*-\s*/, '');
+                const stockQty = availableStock[productName] || 0;
+
+                return (
+                  <tr key={row.id} className={`hover:bg-gray-50 transition-colors ${row.isRemaining ? 'bg-yellow-50' : ''}`}>
+                    <td className="px-4 py-4">
+                      <span className="text-sm font-medium text-gray-900">
+                        {productName}
+                      </span>
+                      {row.isRemaining && (
+                        <span className="block text-xs text-yellow-700 italic mt-1">
+                          Remaining Quantity
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className="text-sm text-gray-900">{row.quantity}</span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className="text-sm text-gray-900">₹{row.marketPrice || 0}/kg</span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <select
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                        value={row.entityType || ''}
+                        onChange={(e) => {
+                          if (row.isRemaining) {
+                            removeRoutesForRow(row.id.split('-remaining')[0], true, row.id);
+                            setRemainingRowAssignments(prev => ({
+                              ...prev,
+                              [row.id]: {
+                                ...prev[row.id],
+                                entityType: e.target.value,
+                                assignedTo: '',
+                                marketPrice: prev[row.id]?.marketPrice || row.marketPrice || 0,
+                                assignedQty: prev[row.id]?.assignedQty || 0,
+                                price: prev[row.id]?.price || 0
+                              }
+                            }));
+                          } else {
+                            removeRoutesForRow(row.id, false);
+                            const updatedRows = [...productRows];
+                            updatedRows[row.displayIndex].entityType = e.target.value;
+                            updatedRows[row.displayIndex].assignedTo = '';
+                            setProductRows(updatedRows);
+                          }
+                        }}
+                      >
+                        <option value="">Select type...</option>
+                        <option value="farmer">Farmer</option>
+                        <option value="supplier">Supplier</option>
+                        <option value="thirdParty">Third Party</option>
+                      </select>
+                    </td>
+                    <td className="px-4 py-4">
+                      <select
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                        value={row.assignedTo}
+                        disabled={!row.entityType}
+                        onChange={(e) => {
+                          const selectedEntityName = e.target.value;
+                          let selectedEntity = null;
+
+                          if (row.entityType === 'farmer') {
+                            selectedEntity = assignmentOptions.farmers.find(f => f.farmer_name === selectedEntityName);
+                          } else if (row.entityType === 'supplier') {
+                            selectedEntity = assignmentOptions.suppliers.find(s => s.supplier_name === selectedEntityName);
+                          } else if (row.entityType === 'thirdParty') {
+                            selectedEntity = assignmentOptions.thirdParties.find(tp => tp.third_party_name === selectedEntityName);
+                          }
+
+                          if (row.isRemaining) {
+                            removeRoutesForRow(row.id.split('-remaining')[0], true, row.id);
+                            setRemainingRowAssignments(prev => ({
+                              ...prev,
+                              [row.id]: {
+                                ...prev[row.id],
+                                assignedTo: selectedEntityName,
+                                tapeColor: selectedEntity?.tape_color || ''
+                              }
+                            }));
+
+                            if (selectedEntity && row.assignedQty > 0) {
+                              const route = createDeliveryRoute(selectedEntity, row.entityType, row, row.assignedQty, true);
+                              route.routeId = `${row.entityType}-${selectedEntity.fid || selectedEntity.sid || selectedEntity.tpid}-${row.id}`;
+                              updateDeliveryRoute(route);
+                            }
+                          } else {
+                            removeRoutesForRow(row.id, false);
+                            const updatedRows = [...productRows];
+                            const targetIndex = row.displayIndex;
+                            updatedRows[targetIndex].assignedTo = selectedEntityName;
+                            updatedRows[targetIndex].tapeColor = selectedEntity?.tape_color || '';
+                            setProductRows(updatedRows);
+
+                            if (selectedEntity && updatedRows[targetIndex].assignedQty > 0) {
+                              const route = createDeliveryRoute(selectedEntity, row.entityType, updatedRows[targetIndex], updatedRows[targetIndex].assignedQty, false);
+                              updateDeliveryRoute(route);
+                            }
+                          }
+                        }}
+                      >
+                        <option value="">Select name...</option>
+                        {row.entityType === 'farmer' && assignmentOptions.farmers.filter(farmer => {
+                          const availability = farmerAvailability[farmer.fid] || [];
+                          return availability.some(item => item.vegetable_name === productName);
+                        }).map(farmer => (
+                          <option key={`farmer-${farmer.fid}`} value={farmer.farmer_name}>{farmer.farmer_name}</option>
+                        ))}
+                        {row.entityType === 'supplier' && assignmentOptions.suppliers.map(supplier => (
+                          <option key={`supplier-${supplier.sid}`} value={supplier.supplier_name}>{supplier.supplier_name}</option>
+                        ))}
+                        {row.entityType === 'thirdParty' && assignmentOptions.thirdParties.map(thirdParty => (
+                          <option key={`thirdParty-${thirdParty.tpid}`} value={thirdParty.third_party_name}>{thirdParty.third_party_name}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-2">
+                        {(() => {
+                          const productName = (row.product_name || row.product)?.replace(/^\d+\s*-\s*/, '');
+                          const entityStock = availableStock[productName] || 0;
+                          return (
+                            <>
+                              <span className={`text-sm font-semibold ${entityStock > 0 ? 'text-emerald-600' : 'text-gray-400'}`}>
+                                {entityStock > 0 ? `${entityStock.toFixed(2)} kg` : 'No stock'}
+                              </span>
+                              {entityStock > 0 && (
+                                <div className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-medium">
+                                  Available
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={row.assignedQty || ''}
+                        placeholder="0"
+                        onChange={(e) => {
+                          const newQty = e.target.value;
+                          if (row.isRemaining) {
+                            setRemainingRowAssignments(prev => ({
+                              ...prev,
+                              [row.id]: { ...prev[row.id], assignedQty: newQty }
+                            }));
+
+                            if (row.assignedTo && row.entityType) {
+                              const entity = row.entityType === 'farmer'
+                                ? assignmentOptions.farmers.find(f => f.farmer_name === row.assignedTo)
+                                : row.entityType === 'supplier'
+                                  ? assignmentOptions.suppliers.find(s => s.supplier_name === row.assignedTo)
+                                  : assignmentOptions.thirdParties.find(tp => tp.third_party_name === row.assignedTo);
+
+                              if (entity) {
+                                const route = createDeliveryRoute(entity, row.entityType, row, newQty, true);
+                                route.routeId = `${row.entityType}-${entity.fid || entity.sid || entity.tpid}-${row.id}`;
+                                updateDeliveryRoute(route);
+                              }
+                            }
+                          } else {
+                            const updatedRows = [...productRows];
+                            updatedRows[row.displayIndex].assignedQty = newQty;
+                            setProductRows(updatedRows);
+
+                            if (row.assignedTo && row.entityType) {
+                              const entity = row.entityType === 'farmer'
+                                ? assignmentOptions.farmers.find(f => f.farmer_name === row.assignedTo)
+                                : row.entityType === 'supplier'
+                                  ? assignmentOptions.suppliers.find(s => s.supplier_name === row.assignedTo)
+                                  : assignmentOptions.thirdParties.find(tp => tp.third_party_name === row.assignedTo);
+
+                              if (entity) {
+                                const route = createDeliveryRoute(entity, row.entityType, updatedRows[row.displayIndex], newQty, false);
+                                updateDeliveryRoute(route);
+                              }
+                            }
+                          }
+                        }}
+                        className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                      />
+                    </td>
+                    <td className="px-4 py-4">
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={row.price || ''}
+                        placeholder="0.00"
+                        onChange={(e) => {
+                          if (row.isRemaining) {
+                            setRemainingRowAssignments(prev => ({
+                              ...prev,
+                              [row.id]: { ...prev[row.id], price: e.target.value }
+                            }));
+                          } else {
+                            const updatedRows = [...productRows];
+                            updatedRows[row.displayIndex].price = e.target.value;
+                            setProductRows(updatedRows);
+                          }
+                        }}
+                        className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Product Cards - Mobile */}
+        <div className="lg:hidden space-y-4">
+          {displayRows.map((row, index) => {
+            const productName = (row.product_name || row.product)?.replace(/^\d+\s*-\s*/, '');
+            const stockQty = availableStock[productName] || 0;
+
+            return (
+              <div key={row.id} className={`border rounded-lg p-4 ${row.isRemaining ? 'bg-yellow-50 border-yellow-200' : 'bg-white border-gray-200'}`}>
+                <div className="flex justify-between items-start mb-3">
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-900">{productName}</h3>
+                    {row.isRemaining && (
+                      <span className="text-xs text-yellow-700 italic">Remaining Quantity</span>
+                    )}
+                    <p className="text-sm text-gray-600">{row.quantity}</p>
+                  </div>
+                  <span className="text-sm font-medium text-emerald-600">₹{row.marketPrice || 0}/kg</span>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Entity Type <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                      value={row.entityType || ''}
+                      onChange={(e) => {
+                        if (row.isRemaining) {
+                          removeRoutesForRow(row.id.split('-remaining')[0], true, row.id);
+                          setRemainingRowAssignments(prev => ({
+                            ...prev,
+                            [row.id]: {
+                              ...prev[row.id],
+                              entityType: e.target.value,
+                              assignedTo: '',
+                              marketPrice: prev[row.id]?.marketPrice || row.marketPrice || 0,
+                              assignedQty: prev[row.id]?.assignedQty || 0,
+                              price: prev[row.id]?.price || 0
+                            }
+                          }));
+                        } else {
+                          removeRoutesForRow(row.id, false);
+                          const updatedRows = [...productRows];
+                          updatedRows[row.displayIndex].entityType = e.target.value;
+                          updatedRows[row.displayIndex].assignedTo = '';
+                          setProductRows(updatedRows);
+                        }
+                      }}
+                    >
+                      <option value="">Select type...</option>
+                      <option value="farmer">Farmer</option>
+                      <option value="supplier">Supplier</option>
+                      <option value="thirdParty">Third Party</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Name <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                      value={row.assignedTo}
+                      disabled={!row.entityType}
+                      onChange={(e) => {
+                        const selectedEntityName = e.target.value;
+                        let selectedEntity = null;
+
+                        if (row.entityType === 'farmer') {
+                          selectedEntity = assignmentOptions.farmers.find(f => f.farmer_name === selectedEntityName);
+                        } else if (row.entityType === 'supplier') {
+                          selectedEntity = assignmentOptions.suppliers.find(s => s.supplier_name === selectedEntityName);
+                        } else if (row.entityType === 'thirdParty') {
+                          selectedEntity = assignmentOptions.thirdParties.find(tp => tp.third_party_name === selectedEntityName);
+                        }
+
+                        if (row.isRemaining) {
+                          removeRoutesForRow(row.id.split('-remaining')[0], true, row.id);
+                          setRemainingRowAssignments(prev => ({
+                            ...prev,
+                            [row.id]: {
+                              ...prev[row.id],
+                              assignedTo: selectedEntityName,
+                              tapeColor: selectedEntity?.tape_color || ''
+                            }
+                          }));
+
+                          if (selectedEntity && row.assignedQty > 0) {
+                            const route = createDeliveryRoute(selectedEntity, row.entityType, row, row.assignedQty, true);
+                            route.routeId = `${row.entityType}-${selectedEntity.fid || selectedEntity.sid || selectedEntity.tpid}-${row.id}`;
+                            updateDeliveryRoute(route);
+                          }
+                        } else {
+                          removeRoutesForRow(row.id, false);
+                          const updatedRows = [...productRows];
+                          const targetIndex = row.displayIndex;
+                          updatedRows[targetIndex].assignedTo = selectedEntityName;
+                          updatedRows[targetIndex].tapeColor = selectedEntity?.tape_color || '';
+                          setProductRows(updatedRows);
+
+                          if (selectedEntity && updatedRows[targetIndex].assignedQty > 0) {
+                            const route = createDeliveryRoute(selectedEntity, row.entityType, updatedRows[targetIndex], updatedRows[targetIndex].assignedQty, false);
+                            updateDeliveryRoute(route);
+                          }
+                        }
+                      }}
+                    >
+                      <option value="">Select name...</option>
+                      {row.entityType === 'farmer' && assignmentOptions.farmers.filter(farmer => {
+                        const availability = farmerAvailability[farmer.fid] || [];
+                        return availability.some(item => item.vegetable_name === productName);
+                      }).map(farmer => (
+                        <option key={`farmer-${farmer.fid}`} value={farmer.farmer_name}>{farmer.farmer_name}</option>
+                      ))}
+                      {row.entityType === 'supplier' && assignmentOptions.suppliers.map(supplier => (
+                        <option key={`supplier-${supplier.sid}`} value={supplier.supplier_name}>{supplier.supplier_name}</option>
+                      ))}
+                      {row.entityType === 'thirdParty' && assignmentOptions.thirdParties.map(thirdParty => (
+                        <option key={`thirdParty-${thirdParty.tpid}`} value={thirdParty.third_party_name}>{thirdParty.third_party_name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Entity Stock</label>
+                    <div className="flex items-center gap-2">
+                      {(() => {
+                        const productName = (row.product_name || row.product)?.replace(/^\d+\s*-\s*/, '');
+                        const entityStock = availableStock[productName] || 0;
+                        return (
+                          <>
+                            <span className={`text-sm font-semibold ${entityStock > 0 ? 'text-emerald-600' : 'text-gray-400'}`}>
+                              {entityStock > 0 ? `${entityStock.toFixed(2)} kg` : 'No stock'}
+                            </span>
+                            {entityStock > 0 && (
+                              <div className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-medium">
+                                Available
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Picked Qty <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={row.assignedQty || ''}
+                        placeholder="0"
+                        onChange={(e) => {
+                          const newQty = e.target.value;
+                          if (row.isRemaining) {
+                            setRemainingRowAssignments(prev => ({
+                              ...prev,
+                              [row.id]: { ...prev[row.id], assignedQty: newQty }
+                            }));
+
+                            if (row.assignedTo && row.entityType) {
+                              const entity = row.entityType === 'farmer'
+                                ? assignmentOptions.farmers.find(f => f.farmer_name === row.assignedTo)
+                                : row.entityType === 'supplier'
+                                  ? assignmentOptions.suppliers.find(s => s.supplier_name === row.assignedTo)
+                                  : assignmentOptions.thirdParties.find(tp => tp.third_party_name === row.assignedTo);
+
+                              if (entity) {
+                                const route = createDeliveryRoute(entity, row.entityType, row, newQty, true);
+                                route.routeId = `${row.entityType}-${entity.fid || entity.sid || entity.tpid}-${row.id}`;
+                                updateDeliveryRoute(route);
+                              }
+                            }
+                          } else {
+                            const updatedRows = [...productRows];
+                            updatedRows[row.displayIndex].assignedQty = newQty;
+                            setProductRows(updatedRows);
+
+                            if (row.assignedTo && row.entityType) {
+                              const entity = row.entityType === 'farmer'
+                                ? assignmentOptions.farmers.find(f => f.farmer_name === row.assignedTo)
+                                : row.entityType === 'supplier'
+                                  ? assignmentOptions.suppliers.find(s => s.supplier_name === row.assignedTo)
+                                  : assignmentOptions.thirdParties.find(tp => tp.third_party_name === row.assignedTo);
+
+                              if (entity) {
+                                const route = createDeliveryRoute(entity, row.entityType, updatedRows[row.displayIndex], newQty, false);
+                                updateDeliveryRoute(route);
+                              }
+                            }
+                          }
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Price (₹) <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={row.price || ''}
+                        placeholder="0.00"
+                        onChange={(e) => {
+                          if (row.isRemaining) {
+                            setRemainingRowAssignments(prev => ({
+                              ...prev,
+                              [row.id]: { ...prev[row.id], price: e.target.value }
+                            }));
+                          } else {
+                            const updatedRows = [...productRows];
+                            updatedRows[row.displayIndex].price = e.target.value;
+                            setProductRows(updatedRows);
+                          }
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Total Price Section */}
+        <div className="mt-6 flex justify-end">
+          <div className="bg-gray-50 rounded-lg p-4 min-w-[250px]">
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-semibold text-gray-700">Total Price:</span>
+              <span className="text-lg font-bold text-emerald-600">
+                ₹{displayRows.reduce((total, row) => {
+                  const qty = parseFloat(row.assignedQty) || 0;
+                  const price = parseFloat(row.price) || 0;
+                  return total + (qty * price);
+                }, 0).toFixed(2)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Delivery Routes Section */}
+      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-2">Assigned Drivers</h2>
+        <p className="text-sm text-gray-600 mb-4">Individual drivers can be assigned for each product allocation</p>
+
+        {/* Desktop Table */}
+        <div className="hidden lg:block overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Source</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Address</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Product Name</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Quantity</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Entity Type</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Assigned Driver</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {deliveryRoutes.map((route, index) => (
+                <tr key={route.routeId || index} className={`hover:bg-gray-50 transition-colors ${route.isRemaining ? 'bg-yellow-50' : ''}`}>
+                  <td className="px-4 py-4">
+                    <span className="text-sm text-gray-900">{route.location || '-'}</span>
+                    {route.isRemaining && (
+                      <span className="block text-xs text-yellow-700 italic mt-1">Remaining Qty</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-4">
+                    <span className="text-sm text-gray-600">{route.address || '-'}</span>
+                  </td>
+                  <td className="px-4 py-4">
+                    <span className="text-sm text-gray-900">{route.product || '-'}</span>
+                  </td>
+                  <td className="px-4 py-4">
+                    <span className="text-sm text-gray-900">{route.quantity ? `${route.quantity} kg` : '-'}</span>
+                  </td>
+                  <td className="px-4 py-4">
+                    <span className="text-sm text-gray-600 capitalize">{route.entityType || '-'}</span>
+                  </td>
+                  <td className="px-4 py-4">
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                      value={route.driver || ''}
+                      onChange={(e) => {
+                        const updatedRoutes = [...deliveryRoutes];
+                        updatedRoutes[index].driver = e.target.value;
+                        setDeliveryRoutes(updatedRoutes);
+                      }}
+                    >
+                      <option value="">Select driver...</option>
+                      {assignmentOptions.drivers && assignmentOptions.drivers.map(driver => (
+                        <option key={`driver-${driver.did}`} value={`${driver.driver_name} - ${driver.driver_id}`}>
+                          {driver.driver_name} - {driver.driver_id}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+              {deliveryRoutes.length === 0 && (
+                <tr>
+                  <td colSpan="6" className="px-4 py-8 text-center text-gray-500">
+                    No delivery routes created yet. Assign products to entities to create routes.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile Cards */}
+        <div className="lg:hidden space-y-4">
+          {deliveryRoutes.map((route, index) => (
+            <div key={route.routeId || index} className={`border rounded-lg p-4 ${route.isRemaining ? 'bg-yellow-50 border-yellow-200' : 'bg-white border-gray-200'}`}>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Source</label>
+                  <div className="text-sm text-gray-900">{route.location || '-'}</div>
+                  {route.isRemaining && (
+                    <span className="text-xs text-yellow-700 italic">Remaining Qty</span>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Address</label>
+                  <div className="text-sm text-gray-600">{route.address || '-'}</div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Product</label>
+                    <div className="text-sm text-gray-900">{route.product || '-'}</div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Quantity</label>
+                    <div className="text-sm text-gray-900">{route.quantity ? `${route.quantity} kg` : '-'}</div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Entity Type</label>
+                  <div className="text-sm text-gray-600 capitalize">{route.entityType || '-'}</div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Assigned Driver</label>
+                  <select
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                    value={route.driver || ''}
+                    onChange={(e) => {
+                      const updatedRoutes = [...deliveryRoutes];
+                      updatedRoutes[index].driver = e.target.value;
+                      setDeliveryRoutes(updatedRoutes);
+                    }}
+                  >
+                    <option value="">Select driver...</option>
+                    {assignmentOptions.drivers && assignmentOptions.drivers.map(driver => (
+                      <option key={`driver-${driver.did}`} value={`${driver.driver_name} - ${driver.driver_id}`}>
+                        {driver.driver_name} - {driver.driver_id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+          ))}
+          {deliveryRoutes.length === 0 && (
+            <div className="text-center py-8 text-gray-500">
+              No delivery routes created yet. Assign products to entities to create routes.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Summary Section - Combined by Driver */}
+      {hasAssignedDrivers && (
+        <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl shadow-sm p-6 mb-6 border-2 border-emerald-200">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-emerald-600 rounded-lg">
+              <Package className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Assignment Summary</h2>
+              <p className="text-sm text-gray-600">Product collections grouped by driver</p>
+            </div>
+          </div>
+
+          {/* Desktop Summary - Grouped by Driver */}
+          <div className="hidden lg:block space-y-6">
+            {groupedDriverAssignments.map((driverGroup, groupIndex) => {
+              const driverTotal = driverGroup.assignments.reduce((sum, a) => sum + a.totalAmount, 0);
+              const totalWeight = driverGroup.assignments.reduce((sum, a) => sum + parseFloat(a.quantity), 0);
+
+              return (
+                <div key={groupIndex} className="bg-white rounded-lg shadow-sm overflow-hidden border-2 border-emerald-300">
+                  {/* Driver Header */}
+                  <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-4">
+                    <div className="flex items-center gap-3 text-white">
+                      <Truck className="w-6 h-6" />
+                      <div>
+                        <h3 className="text-lg font-bold">{driverGroup.driver}</h3>
+                        <p className="text-sm text-emerald-100">{driverGroup.assignments.length} Collections</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Assignments Table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-emerald-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Product</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Source Type</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Source Name</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Address</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Quantity</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Price</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Amount</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {driverGroup.assignments.map((assignment, idx) => (
+                          <tr key={idx} className={`hover:bg-emerald-50 transition-colors ${assignment.isRemaining ? 'bg-yellow-50' : ''}`}>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                                <span className="text-sm font-medium text-gray-900">{assignment.product || '-'}</span>
+                              </div>
+                              {assignment.isRemaining && (
+                                <span className="block text-xs text-yellow-700 italic mt-1 ml-4">Remaining Allocation</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 capitalize">
+                                {assignment.entityType || '-'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <User className="w-4 h-4 text-gray-400" />
+                                <span className="text-sm text-gray-900">{assignment.location || '-'}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-start gap-2">
+                                <MapPin className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                <span className="text-sm text-gray-600">{assignment.address || '-'}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="text-sm font-semibold text-gray-900">{assignment.quantity} kg</span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="text-sm text-gray-900">₹{assignment.price.toFixed(2)}/kg</span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="text-sm font-bold text-emerald-700">₹{assignment.totalAmount.toFixed(2)}</span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <select
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                                value={assignmentStatuses[assignment.routeId] || 'pending'}
+                                onChange={(e) => setAssignmentStatuses(prev => ({ ...prev, [assignment.routeId]: e.target.value }))}
+                              >
+                                <option value="pending">Pending</option>
+                                <option value="picked">Picked</option>
+                                <option value="completed">Completed</option>
+                              </select>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-emerald-100 border-t-2 border-emerald-300">
+                        <tr>
+                          <td colSpan="7" className="px-4 py-3 text-right">
+                            <span className="text-sm font-bold text-gray-900">Driver Total:</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-lg font-bold text-emerald-700">₹{driverTotal.toFixed(2)}</span>
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Mobile Summary - Grouped by Driver */}
+          <div className="lg:hidden space-y-6">
+            {groupedDriverAssignments.map((driverGroup, groupIndex) => {
+              const driverTotal = driverGroup.assignments.reduce((sum, a) => sum + a.totalAmount, 0);
+              const totalWeight = driverGroup.assignments.reduce((sum, a) => sum + parseFloat(a.quantity), 0);
+
+              return (
+                <div key={groupIndex} className="bg-white rounded-lg shadow-sm overflow-hidden border-2 border-emerald-300">
+                  {/* Driver Header */}
+                  <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-3">
+                    <div className="flex items-center gap-2 text-white">
+                      <Truck className="w-5 h-5" />
+                      <div>
+                        <h3 className="text-base font-bold">{driverGroup.driver}</h3>
+                        <p className="text-xs text-emerald-100">{driverGroup.assignments.length} Collections</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Assignments */}
+                  <div className="p-4 space-y-3">
+                    {driverGroup.assignments.map((assignment, idx) => (
+                      <div key={idx} className={`border rounded-lg p-3 ${assignment.isRemaining ? 'bg-yellow-50 border-yellow-200' : 'border-gray-200'}`}>
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                              <span className="text-sm font-semibold text-gray-900">{assignment.product}</span>
+                            </div>
+                            {assignment.isRemaining && (
+                              <span className="text-xs text-yellow-700 italic">Remaining Allocation</span>
+                            )}
+                          </div>
+                          <span className="text-xs font-medium px-2 py-1 rounded-full bg-emerald-100 text-emerald-800 capitalize">
+                            {assignment.entityType}
+                          </span>
+                        </div>
+
+                        <div className="space-y-2 text-sm">
+                          <div className="flex items-center gap-2">
+                            <User className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                            <span className="text-gray-900">{assignment.location}</span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <MapPin className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                            <span className="text-gray-600 text-xs">{assignment.address}</span>
+                          </div>
+                          <div className="flex justify-between items-center pt-2 border-t border-gray-200">
+                            <span className="text-gray-700">{assignment.quantity} kg × ₹{assignment.price.toFixed(2)}/kg</span>
+                            <span className="font-bold text-emerald-700">₹{assignment.totalAmount.toFixed(2)}</span>
+                          </div>
+                          <div className="pt-2">
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Status</label>
+                            <select
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                              value={assignmentStatuses[assignment.routeId] || 'pending'}
+                              onChange={(e) => setAssignmentStatuses(prev => ({ ...prev, [assignment.routeId]: e.target.value }))}
+                            >
+                              <option value="pending">Pending</option>
+                              <option value="picked">Picked</option>
+                              <option value="completed">Completed</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Driver Total */}
+                    <div className="bg-emerald-100 rounded-lg p-3 border-2 border-emerald-300">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-bold text-gray-900">Driver Total:</span>
+                        <span className="text-lg font-bold text-emerald-700">₹{driverTotal.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Grand Total Section */}
+          <div className="mt-6 bg-white rounded-lg shadow-lg p-6 border-2 border-emerald-600">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-600 rounded-lg">
+                  <Check className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-xl font-bold text-gray-900">Grand Total</span>
+              </div>
+              <span className="text-2xl font-bold text-emerald-700">
+                ₹{groupedDriverAssignments
+                  .reduce((total, group) => total + group.assignments.reduce((sum, a) => sum + a.totalAmount, 0), 0)
+                  .toFixed(2)}
+              </span>
+            </div>
+
+            {/* Summary Stats */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+              <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-600 rounded-lg">
+                    <Package className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-600">Total Collections</p>
+                    <p className="text-lg font-bold text-gray-900">
+                      {deliveryRoutes.filter(route => route.driver).length}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-600 rounded-lg">
+                    <Truck className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-600">Drivers Assigned</p>
+                    <p className="text-lg font-bold text-gray-900">{groupedDriverAssignments.length}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-lg p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-emerald-600 rounded-lg">
+                    <Check className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-600">Total Weight</p>
+                    <p className="text-lg font-bold text-gray-900">
+                      {deliveryRoutes
+                        .filter(route => route.driver)
+                        .reduce((total, route) => total + (parseFloat(route.quantity) || 0), 0)
+                        .toFixed(2)} kg
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      <div className="flex flex-col sm:flex-row justify-end gap-3">
+        <button
+          onClick={() => navigate('/order-assign')}
+          className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+        >
+          Cancel
+        </button>
+        <button onClick={handleSaveStage1} className="px-6 py-3 bg-emerald-600 text-white rounded-lg font-medium shadow-sm hover:bg-emerald-700 transition-colors">
+          Save Stage 1
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default PreOrder;

@@ -1,0 +1,1752 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Search, Download, ChevronDown, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { getAllStock } from '../../../api/orderAssignmentApi';
+import { getAllSuppliers } from '../../../api/supplierApi';
+import { getAllThirdParties } from '../../../api/thirdPartyApi';
+import { getAllDrivers } from '../../../api/driverApi';
+import { getAllLabours } from '../../../api/labourApi';
+import { getAllProducts, updateProduct } from '../../../api/productApi';
+import { getAllInventory } from '../../../api/inventoryApi';
+import { createInventoryStock, getAllInventoryStocks, updateInventoryStock, deleteInventoryStock } from '../../../api/inventoryStockApi';
+import { getAllCompanies } from '../../../api/inventoryCompanyApi';
+import { createSellStock, getAllSellStocks, deleteSellStock } from '../../../api/sellStockApi';
+import { createNotification, getNotifications } from '../../../api/notificationApi';
+import { BASE_URL } from '../../../config/config';
+
+const StockManagement = () => {
+  const navigate = useNavigate();
+  const [selectedItems, setSelectedItems] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All Status');
+  const [productFilter, setProductFilter] = useState('All Products');
+  const [dateFilter, setDateFilter] = useState('Last 7 days');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [stockData, setStockData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('stock'); // 'stock', 'market', 'sell'
+  const [marketPrices, setMarketPrices] = useState({});
+  const [suppliers, setSuppliers] = useState([]);
+  const [thirdParties, setThirdParties] = useState([]);
+  const [drivers, setDrivers] = useState([]);
+  const [labours, setLabours] = useState([]);
+  const [editingPriceId, setEditingPriceId] = useState(null);
+  const [editingPrice, setEditingPrice] = useState('');
+  const [products, setProducts] = useState([]);
+  const [showSellForm, setShowSellForm] = useState(false);
+  const [sellStockData, setSellStockData] = useState([]);
+  const [dataFetched, setDataFetched] = useState({
+    stock: false,
+    products: false,
+    entities: false,
+    inventory: false,
+    companies: false,
+    sell: false
+  });
+
+  // Market price tab state
+  const [marketSearchTerm, setMarketSearchTerm] = useState('');
+  const [marketCurrentPage, setMarketCurrentPage] = useState(1);
+
+  // Inventory tab state
+  const [inventorySearchTerm, setInventorySearchTerm] = useState('');
+  const [inventoryCurrentPage, setInventoryCurrentPage] = useState(1);
+
+  // Sell Stock Form State
+  const [sellForm, setSellForm] = useState({
+    stockItem: '',
+    entityType: 'supplier', // 'supplier' or 'thirdParty'
+    selectedEntity: '',
+    pricePerKg: '',
+    quantity: '',
+    totalAmount: 0
+  });
+
+  // Inventory Stock State
+  const [inventoryData, setInventoryData] = useState([]);
+  const [showInventoryForm, setShowInventoryForm] = useState(false);
+  const [editingInventory, setEditingInventory] = useState(null);
+  const [inventoryProducts, setInventoryProducts] = useState([]);
+  const [inventoryCompanies, setInventoryCompanies] = useState([]);
+  const [inventoryForm, setInventoryForm] = useState({
+    invoiceNo: '',
+    companyName: '',
+    companyId: '',
+    item: '',
+    hsnCode: '',
+    quantity: '',
+    pricePerUnit: '',
+    gst: '',
+    totalWithGst: 0,
+    inventoryId: ''
+  });
+
+  // Refs for keyboard navigation in Market Price Entry table
+  const marketPriceRefs = useRef({});
+
+  // Handle arrow key navigation between market price inputs
+  const handleMarketPriceKeyDown = (e, rowIndex, totalRows) => {
+    const arrowKeys = ['ArrowUp', 'ArrowDown'];
+    if (!arrowKeys.includes(e.key)) return;
+
+    e.preventDefault();
+
+    let nextRow = rowIndex;
+    if (e.key === 'ArrowDown') {
+      nextRow = Math.min(rowIndex + 1, totalRows - 1);
+    } else if (e.key === 'ArrowUp') {
+      nextRow = Math.max(rowIndex - 1, 0);
+    }
+
+    const nextKey = `${nextRow}`;
+    const nextInput = marketPriceRefs.current[nextKey];
+
+    if (nextInput) {
+      nextInput.focus();
+      if (nextInput.select) {
+        setTimeout(() => nextInput.select(), 0);
+      }
+    }
+  };
+
+  // Track which products have already triggered low stock alerts to avoid duplicates
+  // Use localStorage to persist across page refreshes
+  const getAlertedProducts = () => {
+    try {
+      const stored = localStorage.getItem('lowStockAlertedProducts');
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  };
+
+  const saveAlertedProducts = (productsSet) => {
+    try {
+      localStorage.setItem('lowStockAlertedProducts', JSON.stringify(Array.from(productsSet)));
+    } catch (error) {
+      console.error('Error saving alerted products:', error);
+    }
+  };
+
+  // Function to check if a low stock notification already exists in backend
+  const hasExistingLowStockNotification = useCallback(async (productName) => {
+    try {
+      const res = await getNotifications();
+      const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : res?.notifications || []);
+      
+      // Check if there's a recent low stock notification for this product (within last 24 hours)
+      const now = new Date();
+      const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      
+      return list.some(notif => {
+        const notifDate = notif.createdAt ? new Date(notif.createdAt) : null;
+        const title = notif.title || '';
+        const isLowStockAlert = title.includes('Low Stock Alert:') && title.includes(productName);
+        const isRecent = notifDate && notifDate >= oneDayAgo;
+        return isLowStockAlert && isRecent;
+      });
+    } catch (error) {
+      console.error('Error checking existing notifications:', error);
+      return false;
+    }
+  }, []);
+
+  // Function to check for low stock and create notifications
+  const checkLowStock = useCallback(async (stockDataArray) => {
+    try {
+      // Aggregate stock quantities by product name
+      const productQuantities = {};
+      
+      stockDataArray.forEach(item => {
+        const productName = item.products || item.product_name || item.product || '';
+        if (!productName) return;
+        
+        const quantity = parseFloat(item.quantity) || 0;
+        if (productQuantities[productName]) {
+          productQuantities[productName] += quantity;
+        } else {
+          productQuantities[productName] = quantity;
+        }
+      });
+
+      // Check each product for low stock (< 300kg)
+      const lowStockThreshold = 300;
+      const currentAlertedProducts = new Set();
+      const alertedProducts = getAlertedProducts();
+
+      for (const [productName, totalQuantity] of Object.entries(productQuantities)) {
+        if (totalQuantity < lowStockThreshold && totalQuantity > 0) {
+          currentAlertedProducts.add(productName);
+          
+          // Check both localStorage and backend to avoid duplicates
+          const alreadyAlerted = alertedProducts.has(productName);
+          const hasExistingNotification = await hasExistingLowStockNotification(productName);
+          
+          // Only create notification if we haven't already alerted AND no recent notification exists
+          if (!alreadyAlerted && !hasExistingNotification) {
+            try {
+              await createNotification({
+                title: `Low Stock Alert: ${productName}`,
+                message: `Stock quantity is ${totalQuantity.toFixed(2)} kg (below ${lowStockThreshold} kg threshold)`,
+                type: 'warning',
+                category: 'Stock'
+              });
+              
+              // Mark as alerted in localStorage
+              alertedProducts.add(productName);
+              saveAlertedProducts(alertedProducts);
+              
+              // Trigger Navbar refresh
+              window.dispatchEvent(new CustomEvent('refreshNotifications'));
+            } catch (notifyErr) {
+              console.error('Failed to create low stock notification:', notifyErr);
+            }
+          }
+        } else if (totalQuantity >= lowStockThreshold) {
+          // If stock is back above threshold, remove from alerted set
+          alertedProducts.delete(productName);
+          saveAlertedProducts(alertedProducts);
+        }
+      }
+
+      // Remove products that are no longer in stock or no longer low
+      alertedProducts.forEach(productName => {
+        if (!currentAlertedProducts.has(productName)) {
+          alertedProducts.delete(productName);
+        }
+      });
+      saveAlertedProducts(alertedProducts);
+    } catch (error) {
+      console.error('Error checking low stock:', error);
+    }
+  }, [hasExistingLowStockNotification]);
+
+  useEffect(() => {
+    if (!dataFetched.stock) {
+      const fetchStock = async () => {
+        try {
+          const response = await getAllStock();
+          if (response.success) {
+            const stock = response.data || [];
+            setStockData(stock);
+            // Check for low stock after fetching
+            await checkLowStock(stock);
+          }
+        } catch (error) {
+          console.error('Error fetching stock:', error.message);
+        } finally {
+          setLoading(false);
+          setDataFetched(prev => ({ ...prev, stock: true }));
+        }
+      };
+      fetchStock();
+    }
+  }, [dataFetched.stock, checkLowStock]);
+
+  useEffect(() => {
+    if (!dataFetched.products) {
+      const fetchProducts = async () => {
+        try {
+          const response = await getAllProducts(1, 1000);
+          if (response.success) {
+            setProducts(response.data || []);
+          }
+        } catch (error) {
+          console.error('Error fetching products:', error.message);
+        } finally {
+          setDataFetched(prev => ({ ...prev, products: true }));
+        }
+      };
+      fetchProducts();
+    }
+  }, [dataFetched.products]);
+
+  useEffect(() => {
+    if (!dataFetched.entities) {
+      const fetchEntities = async () => {
+        try {
+          const [suppliersRes, thirdPartiesRes, driversRes, laboursRes] = await Promise.all([
+            getAllSuppliers(),
+            getAllThirdParties(),
+            getAllDrivers(),
+            getAllLabours()
+          ]);
+
+          if (suppliersRes.success) {
+            setSuppliers(suppliersRes.data || []);
+          }
+
+          if (thirdPartiesRes.success) {
+            setThirdParties(thirdPartiesRes.data || []);
+          }
+
+          if (driversRes.success) {
+            setDrivers(driversRes.data || []);
+          }
+
+          if (laboursRes.success) {
+            setLabours(laboursRes.data || []);
+          }
+        } catch (error) {
+          console.error('Error fetching entities:', error.message);
+        } finally {
+          setDataFetched(prev => ({ ...prev, entities: true }));
+        }
+      };
+      fetchEntities();
+    }
+  }, [dataFetched.entities]);
+
+  useEffect(() => {
+    if (!dataFetched.inventory) {
+      const fetchInventoryProducts = async () => {
+        try {
+          const response = await getAllInventory(1, 1000);
+          setInventoryProducts(response.data || []);
+        } catch (error) {
+          console.error('Error fetching inventory products:', error.message);
+        } finally {
+          setDataFetched(prev => ({ ...prev, inventory: true }));
+        }
+      };
+      fetchInventoryProducts();
+    }
+  }, [dataFetched.inventory]);
+
+  useEffect(() => {
+    if (!dataFetched.companies) {
+      const fetchInventoryCompanies = async () => {
+        try {
+          const response = await getAllCompanies();
+          setInventoryCompanies(response.data || []);
+        } catch (error) {
+          console.error('Error fetching inventory companies:', error.message);
+        } finally {
+          setDataFetched(prev => ({ ...prev, companies: true }));
+        }
+      };
+      fetchInventoryCompanies();
+    }
+  }, [dataFetched.companies]);
+
+  useEffect(() => {
+    if (activeTab === 'inventory' && !dataFetched.sell) {
+      fetchInventoryStocks();
+      setDataFetched(prev => ({ ...prev, sell: true }));
+    }
+    if (activeTab === 'sell' && !dataFetched.sell) {
+      fetchSellStocks();
+      setDataFetched(prev => ({ ...prev, sell: true }));
+    }
+  }, [activeTab, dataFetched.sell]);
+
+  const summaryCards = [
+    { title: 'Total Stock Items', value: stockData.length, bgColor: 'bg-[#D4F4E8]', textColor: 'text-[#0D7C66]' },
+    { title: 'Pending Reassignment', value: stockData.length, bgColor: 'bg-[#B8F3DC]', textColor: 'text-[#0D7C66]' },
+    { title: 'Total Weight', value: `${stockData.reduce((sum, item) => sum + (parseFloat(item.quantity) || 0), 0).toFixed(1)} Kg`, bgColor: 'bg-[#1CB68B]', textColor: 'text-white' },
+    { title: 'Average Age', value: '2.3 Days', bgColor: 'bg-[#0D7C66]', textColor: 'text-white' }
+  ];
+
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      setSelectedItems(stockData.map(item => item.id));
+    } else {
+      setSelectedItems([]);
+    }
+  };
+
+  const handleSelectItem = (id) => {
+    if (selectedItems.includes(id)) {
+      setSelectedItems(selectedItems.filter(item => item !== id));
+    } else {
+      setSelectedItems([...selectedItems, id]);
+    }
+  };
+
+  const getStatusStyle = (status) => {
+    switch (status) {
+      case 'Pending':
+        return 'bg-amber-100 text-amber-700';
+      case 'Aging':
+        return 'bg-pink-100 text-pink-700';
+      case 'Reassigned':
+        return 'bg-blue-100 text-blue-700';
+      case 'Critical':
+        return 'bg-red-100 text-red-700';
+      default:
+        return 'bg-gray-100 text-gray-700';
+    }
+  };
+
+  const getOrderTypeStyle = (type) => {
+    switch (type) {
+      case 'BOX':
+        return 'bg-emerald-100 text-emerald-700';
+      case 'BAG':
+        return 'bg-amber-100 text-amber-700';
+      default:
+        return 'bg-gray-100 text-gray-700';
+    }
+  };
+
+  const getActionButton = (status, item) => {
+    if (status === 'Reassigned') {
+      return (
+        <button className="px-4 py-1.5 text-sm text-gray-400 border border-gray-300 rounded-md">
+          Assigned
+        </button>
+      );
+    }
+    if (status === 'Critical' || status === 'Aging') {
+      return (
+        <button
+          onClick={() => navigate(`/stock/${item.id}`, { state: { stockData: item } })}
+          className="px-4 py-1.5 text-sm text-white bg-red-600 rounded-md hover:bg-red-700 transition-colors"
+        >
+          Urgent
+        </button>
+      );
+    }
+    return (
+      <button
+        onClick={() => navigate(`/stock/${item.id}`, { state: { stockData: item } })}
+        className="px-4 py-1.5 text-sm text-emerald-600 border border-emerald-600 rounded-md hover:bg-emerald-50 transition-colors"
+      >
+        Reassign
+      </button>
+    );
+  };
+
+  const handleMarketPriceChange = (itemId, price) => {
+    setMarketPrices(prev => ({
+      ...prev,
+      [itemId]: price
+    }));
+  };
+
+  const handlePriceEdit = (pid, currentPrice) => {
+    setEditingPriceId(pid);
+    setEditingPrice(currentPrice);
+  };
+
+  const handlePriceSave = async (pid) => {
+    try {
+      const formData = new FormData();
+      formData.append('current_price', editingPrice);
+      await updateProduct(pid, formData);
+      setEditingPriceId(null);
+      setEditingPrice('');
+      
+      // Refresh products list
+      const response = await getAllProducts(1, 1000);
+      if (response.success) {
+        setProducts(response.data || []);
+      }
+    } catch (error) {
+      console.error('Error updating price:', error);
+      alert('Failed to update price. Please try again.');
+    }
+  };
+
+  const handlePriceCancel = () => {
+    setEditingPriceId(null);
+    setEditingPrice('');
+  };
+
+  const handleSellFormChange = (field, value) => {
+    setSellForm(prev => {
+      const updated = { ...prev, [field]: value };
+
+      // Calculate total amount when price or quantity changes
+      if (field === 'pricePerKg' || field === 'quantity') {
+        const price = parseFloat(field === 'pricePerKg' ? value : updated.pricePerKg) || 0;
+        const qty = parseFloat(field === 'quantity' ? value : updated.quantity) || 0;
+        updated.totalAmount = (price * qty).toFixed(2);
+      }
+
+      return updated;
+    });
+  };
+
+  // Sell Stock Handlers
+  const fetchSellStocks = async () => {
+    try {
+      const response = await getAllSellStocks();
+      setSellStockData(response.data || []);
+    } catch (error) {
+      console.error('Error fetching sell stocks:', error);
+    }
+  };
+
+  const handleSellSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        stockId: parseInt(sellForm.stockItem),
+        entityType: sellForm.entityType,
+        entityId: parseInt(sellForm.selectedEntity),
+        driverId: null,
+        labourId: null,
+        pricePerKg: parseFloat(sellForm.pricePerKg),
+        quantity: parseFloat(sellForm.quantity),
+        totalAmount: parseFloat(sellForm.totalAmount)
+      };
+
+      await createSellStock(payload);
+      fetchSellStocks();
+      
+      // Refresh stock data and check for low stock after selling
+      const stockResponse = await getAllStock();
+      if (stockResponse.success) {
+        const updatedStock = stockResponse.data || [];
+        setStockData(updatedStock);
+        await checkLowStock(updatedStock);
+      }
+      
+      setShowSellForm(false);
+      setSellForm({
+        stockItem: '',
+        entityType: 'supplier',
+        selectedEntity: '',
+        pricePerKg: '',
+        quantity: '',
+        totalAmount: 0
+      });
+      alert('Stock sold successfully!');
+    } catch (error) {
+      console.error('Error selling stock:', error);
+      alert('Failed to sell stock');
+    }
+  };
+
+  const handleDeleteSellStock = async (id) => {
+    if (window.confirm('Are you sure you want to delete this sell stock record?')) {
+      try {
+        await deleteSellStock(id);
+        fetchSellStocks();
+        
+        // Refresh stock data and check for low stock after deletion
+        const stockResponse = await getAllStock();
+        if (stockResponse.success) {
+          const updatedStock = stockResponse.data || [];
+          setStockData(updatedStock);
+          await checkLowStock(updatedStock);
+        }
+      } catch (error) {
+        console.error('Error deleting sell stock:', error);
+        alert('Failed to delete sell stock');
+      }
+    }
+  };
+
+  // Inventory Stock Handlers
+  const fetchInventoryStocks = async () => {
+    try {
+      const response = await getAllInventoryStocks();
+      setInventoryData(response.data || []);
+    } catch (error) {
+      console.error('Error fetching inventory stocks:', error);
+    }
+  };
+
+  const handleInventoryFormChange = (field, value) => {
+    setInventoryForm(prev => {
+      const updated = { ...prev, [field]: value };
+
+      // Calculate total with GST
+      if (field === 'pricePerUnit' || field === 'quantity' || field === 'gst') {
+        const price = parseFloat(field === 'pricePerUnit' ? value : updated.pricePerUnit) || 0;
+        const qty = parseFloat(field === 'quantity' ? value : updated.quantity) || 0;
+        const gst = parseFloat(field === 'gst' ? value : updated.gst) || 0;
+        const subtotal = price * qty;
+        updated.totalWithGst = (subtotal + (subtotal * gst / 100)).toFixed(2);
+      }
+
+      return updated;
+    });
+  };
+
+  const handleInventorySubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        invoice_no: inventoryForm.invoiceNo,
+        company_name: inventoryForm.companyName,
+        company_id: parseInt(inventoryForm.companyId),
+        item_name: inventoryForm.item,
+        hsn_code: inventoryForm.hsnCode,
+        quantity: parseFloat(inventoryForm.quantity),
+        price_per_unit: parseFloat(inventoryForm.pricePerUnit),
+        gst_percentage: parseFloat(inventoryForm.gst),
+        inventory_id: parseInt(inventoryForm.inventoryId)
+      };
+
+      if (editingInventory) {
+        await updateInventoryStock(editingInventory, payload);
+        setEditingInventory(null);
+      } else {
+        await createInventoryStock(payload);
+      }
+      
+      fetchInventoryStocks();
+      
+      // Refresh stock data and check for low stock after inventory update
+      const stockResponse = await getAllStock();
+      if (stockResponse.success) {
+        const updatedStock = stockResponse.data || [];
+        setStockData(updatedStock);
+        await checkLowStock(updatedStock);
+      }
+      
+      setShowInventoryForm(false);
+      setInventoryForm({
+        invoiceNo: '',
+        companyName: '',
+        companyId: '',
+        item: '',
+        hsnCode: '',
+        quantity: '',
+        pricePerUnit: '',
+        gst: '',
+        totalWithGst: 0,
+        inventoryId: ''
+      });
+      alert('Inventory stock saved successfully!');
+    } catch (error) {
+      console.error('Error saving inventory stock:', error);
+      alert('Failed to save inventory stock');
+    }
+  };
+
+  const handleEditInventory = (item) => {
+    setInventoryForm({
+      invoiceNo: item.invoice_no,
+      companyName: item.company_name,
+      companyId: item.company_id,
+      item: item.item_name,
+      hsnCode: item.hsn_code,
+      quantity: item.quantity,
+      pricePerUnit: item.price_per_unit,
+      gst: item.gst_percentage,
+      totalWithGst: item.total_with_gst,
+      inventoryId: item.inventory_id
+    });
+    setEditingInventory(item.id);
+    setShowInventoryForm(true);
+  };
+
+  // Periodic check for low stock (every 5 minutes) when stock data is available
+  // This is less frequent to avoid creating duplicate notifications
+  useEffect(() => {
+    if (stockData.length > 0 && dataFetched.stock) {
+      const interval = setInterval(() => {
+        checkLowStock(stockData);
+      }, 300000); // Check every 5 minutes (300000 ms)
+
+      return () => clearInterval(interval);
+    }
+  }, [stockData.length, dataFetched.stock, checkLowStock]);
+
+  const handleDeleteInventory = async (id) => {
+    if (window.confirm('Are you sure you want to delete this inventory record?')) {
+      try {
+        await deleteInventoryStock(id);
+        fetchInventoryStocks();
+        
+        // Refresh stock data and check for low stock after deletion
+        const stockResponse = await getAllStock();
+        if (stockResponse.success) {
+          const updatedStock = stockResponse.data || [];
+          setStockData(updatedStock);
+          await checkLowStock(updatedStock);
+        }
+      } catch (error) {
+        console.error('Error deleting inventory stock:', error);
+        alert('Failed to delete inventory stock');
+      }
+    }
+  };
+
+  // Derived data for Market Price tab (search + pagination)
+  const marketItemsPerPage = 10;
+  const filteredMarketProducts = products.filter((product) =>
+    product.product_name?.toLowerCase().includes(marketSearchTerm.toLowerCase())
+  );
+  const totalMarketPages = Math.max(1, Math.ceil(filteredMarketProducts.length / marketItemsPerPage));
+  const effectiveMarketPage = Math.min(marketCurrentPage, totalMarketPages);
+  const marketStartIndex = (effectiveMarketPage - 1) * marketItemsPerPage;
+  const marketPaginatedProducts = filteredMarketProducts.slice(
+    marketStartIndex,
+    marketStartIndex + marketItemsPerPage
+  );
+
+  // Derived data for Inventory tab (search + pagination)
+  const inventoryItemsPerPage = 10;
+  const filteredInventoryData = inventoryData.filter(item => {
+    const term = inventorySearchTerm.toLowerCase();
+    if (!term) return true;
+    const invoice = (item.invoice_no || '').toString().toLowerCase();
+    const company = (item.company_name || '').toLowerCase();
+    const itemName = (item.item_name || '').toLowerCase();
+    const hsn = (item.hsn_code || '').toString().toLowerCase();
+    return (
+      invoice.includes(term) ||
+      company.includes(term) ||
+      itemName.includes(term) ||
+      hsn.includes(term)
+    );
+  });
+  const totalInventoryPages = Math.max(
+    1,
+    Math.ceil(filteredInventoryData.length / inventoryItemsPerPage)
+  );
+  const effectiveInventoryPage = Math.min(inventoryCurrentPage, totalInventoryPages);
+  const inventoryStartIndex = (effectiveInventoryPage - 1) * inventoryItemsPerPage;
+  const inventoryPaginatedData = filteredInventoryData.slice(
+    inventoryStartIndex,
+    inventoryStartIndex + inventoryItemsPerPage
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-4 md:p-6 lg:p-8">
+
+      {/* Summary Cards */}
+      {/* <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {summaryCards.map((card, index) => (
+          <div key={index} className={`${card.bgColor} rounded-2xl p-6 shadow-sm`}>
+            <p className={`text-sm font-medium mb-2 ${card.textColor} opacity-90`}>
+              {card.title}
+            </p>
+            <p className={`text-4xl font-bold ${card.textColor}`}>
+              {card.value}
+            </p>
+          </div>
+        ))}
+      </div> */}
+
+      {/* Tabs */}
+      <div className="mb-6">
+        <div className="bg-white rounded-2xl p-2 shadow-sm border border-[#D0E0DB] inline-flex gap-2">
+          <button
+            onClick={() => setActiveTab('stock')}
+            className={`px-6 py-3 rounded-xl font-medium transition-all ${activeTab === 'stock'
+              ? 'bg-[#0D8568] text-white shadow-md'
+              : 'text-[#6B8782] hover:bg-[#F0F4F3]'
+              }`}
+          >
+            Stock Management
+          </button>
+          <button
+            onClick={() => setActiveTab('market')}
+            className={`px-6 py-3 rounded-xl font-medium transition-all ${activeTab === 'market'
+              ? 'bg-[#0D8568] text-white shadow-md'
+              : 'text-[#6B8782] hover:bg-[#F0F4F3]'
+              }`}
+          >
+            Market Price Entry
+          </button>
+          <button
+            onClick={() => setActiveTab('sell')}
+            className={`px-6 py-3 rounded-xl font-medium transition-all ${activeTab === 'sell'
+              ? 'bg-[#0D8568] text-white shadow-md'
+              : 'text-[#6B8782] hover:bg-[#F0F4F3]'
+              }`}
+          >
+            Sell Stock
+          </button>
+          <button
+            onClick={() => setActiveTab('inventory')}
+            className={`px-6 py-3 rounded-xl font-medium transition-all ${activeTab === 'inventory'
+              ? 'bg-[#0D8568] text-white shadow-md'
+              : 'text-[#6B8782] hover:bg-[#F0F4F3]'
+              }`}
+          >
+            Inventory Stock
+          </button>
+        </div>
+      </div>
+
+      {/* Content based on active tab */}
+      {activeTab === 'stock' && (
+        <>
+          {/* Search and Filters */}
+          <div className="flex flex-col lg:flex-row gap-4 mb-6">
+            <div className="relative flex-1">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#6B8782]" size={20} />
+              <input
+                type="text"
+                placeholder="Search products, orders..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-12 pr-4 py-3 bg-[#F0F4F3] border-none rounded-xl text-[#0D5C4D] placeholder-[#6B8782] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+              />
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <div className="relative">
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="appearance-none px-4 py-3 pr-10 bg-[#F0F4F3] border-none rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] cursor-pointer"
+                >
+                  <option>All Types</option>
+                  <option>Farmer</option>
+                  <option>Supplier</option>
+                  <option>Third Party</option>
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#6B8782] w-4 h-4 pointer-events-none" />
+              </div>
+              <button className="px-6 py-3 border border-[#0D7C66] text-[#0D7C66] rounded-xl hover:bg-[#0D7C66] hover:text-white transition-colors font-medium flex items-center gap-2">
+                <Download className="w-4 h-4" />
+                Export
+              </button>
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="bg-white rounded-2xl overflow-hidden border border-[#D0E0DB]">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-[#D4F4E8]">
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                      Order ID
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                      Date
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                      Type
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                      Name
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                      Products
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                      Quantity
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr>
+                      <td colSpan="6" className="px-6 py-8 text-center text-[#6B8782]">
+                        Loading stock data...
+                      </td>
+                    </tr>
+                  ) : stockData.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="px-6 py-8 text-center text-[#6B8782]">
+                        No stock data available
+                      </td>
+                    </tr>
+                  ) : (
+                    stockData.map((item, index) => (
+                      <tr key={item.sid || index} className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'
+                        }`}>
+                        <td className="px-6 py-4 text-sm font-medium text-[#0D5C4D]">
+                          {item.order_id || 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-[#6B8782]">
+                          {item.date ? new Date(item.date).toLocaleDateString() : 'N/A'}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-[#D4F4E8] text-[#047857]">
+                            {item.type || 'N/A'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm font-semibold text-[#0D5C4D]">
+                          {item.name || 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-[#6B8782]">
+                          {item.products || 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 text-sm font-semibold text-[#047857]">
+                          {item.quantity ? `${item.quantity} kg` : 'N/A'}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
+              <div className="text-sm text-[#6B8782]">
+                Showing page {currentPage} of 1
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  className="px-4 py-2 rounded-lg font-medium bg-[#0D8568] text-white"
+                >
+                  1
+                </button>
+                <button
+                  onClick={() => setCurrentPage(prev => prev + 1)}
+                  disabled={currentPage >= 1}
+                  className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Market Price Entry Tab - Show Products Table */}
+      {activeTab === 'market' && (
+        <div className="bg-white rounded-2xl overflow-hidden border border-[#D0E0DB]">
+          {/* Search bar for market price products */}
+          <div className="px-6 py-4 border-b border-[#D0E0DB]">
+            <div className="relative max-w-sm">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[#6B8782]" size={18} />
+              <input
+                type="text"
+                placeholder="Search vegetables..."
+                value={marketSearchTerm}
+                onChange={(e) => {
+                  setMarketSearchTerm(e.target.value);
+                  setMarketCurrentPage(1);
+                }}
+                className="w-full pl-10 pr-4 py-2.5 bg-[#F0F4F3] border border-transparent rounded-xl text-[#0D5C4D] placeholder-[#6B8782] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+              />
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-[#D4F4E8]">
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Image</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Vegetable Name</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Category</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Unit</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Last Updated</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Status</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Market Price (₹/KG)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {marketPaginatedProducts.map((product, index) => (
+                  <tr key={product.pid} className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'}`}>
+                    <td className="px-6 py-4">
+                      {product.product_image ? (
+                        <img src={`${BASE_URL}${product.product_image}`} alt={product.product_name} className="w-12 h-12 rounded-lg object-cover" />
+                      ) : (
+                        <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center text-gray-400 text-xs">No Image</div>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm font-semibold text-[#0D5C4D]">{product.product_name}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-[#0D5C4D]">{product.category?.categoryname || 'N/A'}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-[#0D5C4D]">{product.unit}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm font-medium text-gray-500">
+                        {new Date(product.updatedAt).toLocaleDateString()}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${product.product_status === 'active' ? 'bg-[#4ED39A]' : 'bg-yellow-500'} text-white`}>
+                        <div className="w-2 h-2 rounded-full bg-white"></div>
+                        {product.product_status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      {editingPriceId === product.pid ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            ref={(el) => {
+                              if (el) marketPriceRefs.current[`${index}`] = el;
+                            }}
+                            type="text"
+                            value={editingPrice}
+                            onChange={(e) => setEditingPrice(e.target.value)}
+                            className="w-24 px-2 py-1 border border-[#0D7C66] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handlePriceSave(product.pid);
+                              if (e.key === 'Escape') handlePriceCancel();
+                              if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                handleMarketPriceKeyDown(e, index, marketPaginatedProducts.length);
+                              }
+                            }}
+                          />
+                          <button
+                            onClick={() => handlePriceSave(product.pid)}
+                            className="px-2 py-1 bg-[#0D7C66] text-white rounded text-xs hover:bg-[#0a6354]"
+                          >
+                            ✓
+                          </button>
+                          <button
+                            onClick={handlePriceCancel}
+                            className="px-2 py-1 bg-gray-300 text-gray-700 rounded text-xs hover:bg-gray-400"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <input
+                          ref={(el) => {
+                            if (el) marketPriceRefs.current[`${index}`] = el;
+                          }}
+                          type="text"
+                          value={product.current_price}
+                          onClick={() => handlePriceEdit(product.pid, product.current_price)}
+                          readOnly
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              handleMarketPriceKeyDown(e, index, marketPaginatedProducts.length);
+                            }
+                          }}
+                          className="w-24 px-2 py-1 border border-gray-200 rounded-lg text-sm cursor-pointer hover:border-[#0D7C66] focus:outline-none"
+                          title="Click to edit price"
+                        />
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
+            <div className="text-sm text-[#6B8782]">
+              {filteredMarketProducts.length > 0 ? (
+                `Showing ${marketStartIndex + 1} to ${Math.min(
+                  marketStartIndex + marketItemsPerPage,
+                  filteredMarketProducts.length
+                )} of ${filteredMarketProducts.length} products`
+              ) : (
+                'No products found'
+              )}
+            </div>
+
+            {totalMarketPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setMarketCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={marketCurrentPage === 1}
+                  className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  &lt;
+                </button>
+
+                {[...Array(totalMarketPages)].map((_, index) => {
+                  const pageNum = index + 1;
+                  if (totalMarketPages <= 7) {
+                    // Show all pages if 7 or fewer
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setMarketCurrentPage(pageNum)}
+                        className={`px-4 py-2 rounded-lg font-medium ${
+                          marketCurrentPage === pageNum
+                            ? 'bg-[#0D8568] text-white'
+                            : 'text-[#6B8782] hover:bg-[#D0E0DB]'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  } else {
+                    // Condensed pagination for many pages
+                    if (
+                      pageNum === 1 ||
+                      pageNum === totalMarketPages ||
+                      (pageNum >= marketCurrentPage - 1 && pageNum <= marketCurrentPage + 1)
+                    ) {
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setMarketCurrentPage(pageNum)}
+                          className={`px-4 py-2 rounded-lg font-medium ${
+                            marketCurrentPage === pageNum
+                              ? 'bg-[#0D8568] text-white'
+                              : 'text-[#6B8782] hover:bg-[#D0E0DB]'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    } else if (pageNum === marketCurrentPage - 2 || pageNum === marketCurrentPage + 2) {
+                      return (
+                        <span key={pageNum} className="px-2 py-2 text-[#6B8782]">
+                          ...
+                        </span>
+                      );
+                    }
+                  }
+                  return null;
+                })}
+
+                <button
+                  onClick={() => setMarketCurrentPage(prev => Math.min(prev + 1, totalMarketPages))}
+                  disabled={marketCurrentPage === totalMarketPages}
+                  className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  &gt;
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Sell Stock Tab */}
+      {activeTab === 'sell' && (
+        <>
+          {!showSellForm ? (
+            <>
+              {/* Add Sell Stock Button */}
+              <div className="mb-6 flex justify-end">
+                <button
+                  onClick={() => setShowSellForm(true)}
+                  className="px-6 py-3 bg-[#0D8568] text-white rounded-xl font-semibold hover:bg-[#0D7C66] transition-colors flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Sell Stock
+                </button>
+              </div>
+
+              {/* Sell Stock Table */}
+              <div className="bg-white rounded-2xl overflow-hidden border border-[#D0E0DB]">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-[#D4F4E8]">
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Date</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Stock Item</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Sold To</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Type</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Quantity (kg)</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Price/kg (₹)</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Total Amount (₹)</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sellStockData.length === 0 ? (
+                        <tr>
+                          <td colSpan="8" className="px-6 py-8 text-center text-[#6B8782]">
+                            No sell stock records available
+                          </td>
+                        </tr>
+                      ) : (
+                        sellStockData.map((item, index) => {
+                          const stockItem = stockData.find(s => s.sid === item.stock_id);
+                          const entityName = item.entity_type === 'supplier'
+                            ? suppliers.find(s => s.sid === item.entity_id)?.supplier_name
+                            : thirdParties.find(t => t.tid === item.entity_id)?.third_party_name;
+
+                          return (
+                            <tr key={item.id} className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'}`}>
+                              <td className="px-6 py-4 text-sm text-[#6B8782]">
+                                {new Date(item.createdAt).toLocaleDateString()}
+                              </td>
+                              <td className="px-6 py-4 text-sm font-medium text-[#0D5C4D]">
+                                {stockItem?.order_id || 'N/A'}
+                              </td>
+                              <td className="px-6 py-4 text-sm text-[#0D5C4D]">
+                                {entityName || 'N/A'}
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-[#D4F4E8] text-[#047857]">
+                                  {item.entity_type === 'supplier' ? 'Supplier' : 'Third Party'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-sm font-semibold text-[#047857]">
+                                {item.quantity}
+                              </td>
+                              <td className="px-6 py-4 text-sm text-[#0D5C4D]">
+                                {item.price_per_kg}
+                              </td>
+                              <td className="px-6 py-4 text-sm font-bold text-[#0D5C4D]">
+                                {item.total_amount}
+                              </td>
+                              <td className="px-6 py-4">
+                                <button
+                                  onClick={() => handleDeleteSellStock(item.id)}
+                                  className="px-4 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs font-medium hover:bg-red-200 transition-colors"
+                                >
+                                  Delete
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
+                  <div className="text-sm text-[#6B8782]">
+                    Showing {sellStockData.length} records
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+        <div className="bg-white rounded-2xl p-8 border border-[#D0E0DB]">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-[#0D5C4D]">Add Sell Stock</h2>
+            <button
+              onClick={() => setShowSellForm(false)}
+              className="px-4 py-2 border border-[#D0E0DB] text-[#6B8782] rounded-lg font-medium hover:bg-[#F0F4F3] transition-colors"
+            >
+              Back to List
+            </button>
+          </div>
+          <form onSubmit={handleSellSubmit} className="space-y-6">
+            {/* Stock Item Selection */}
+            <div>
+              <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">
+                Select Stock Item
+              </label>
+              <select
+                value={sellForm.stockItem}
+                onChange={(e) => handleSellFormChange('stockItem', e.target.value)}
+                className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+                required
+              >
+                <option value="">Select a stock item</option>
+                {stockData.map((item, index) => (
+                  <option key={item.sid || index} value={item.sid}>
+                    {item.order_id} - {item.products} ({item.quantity} kg)
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Sell To Section - Supplier/Third Party */}
+            <div>
+              <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">
+                Sell To
+              </label>
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="entityType"
+                    value="supplier"
+                    checked={sellForm.entityType === 'supplier'}
+                    onChange={(e) => {
+                      handleSellFormChange('entityType', e.target.value);
+                      handleSellFormChange('selectedEntity', '');
+                    }}
+                    className="w-4 h-4 text-[#0D8568] focus:ring-[#0D8568]"
+                  />
+                  <span className="text-[#0D5C4D]">Supplier</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="entityType"
+                    value="thirdParty"
+                    checked={sellForm.entityType === 'thirdParty'}
+                    onChange={(e) => {
+                      handleSellFormChange('entityType', e.target.value);
+                      handleSellFormChange('selectedEntity', '');
+                    }}
+                    className="w-4 h-4 text-[#0D8568] focus:ring-[#0D8568]"
+                  />
+                  <span className="text-[#0D5C4D]">Third Party</span>
+                </label>
+              </div>
+
+              {/* Supplier/Third Party Dropdown */}
+              {(sellForm.entityType === 'supplier' || sellForm.entityType === 'thirdParty') && (
+                <select
+                  value={sellForm.selectedEntity}
+                  onChange={(e) => handleSellFormChange('selectedEntity', e.target.value)}
+                  className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+                  required
+                >
+                  <option value="">
+                    Select {sellForm.entityType === 'supplier' ? 'Supplier' : 'Third Party'}
+                  </option>
+                  {sellForm.entityType === 'supplier' && suppliers.map((supplier) => (
+                    <option key={supplier.sid} value={supplier.sid}>
+                      {supplier.supplier_name} - {supplier.phone}
+                    </option>
+                  ))}
+                  {sellForm.entityType === 'thirdParty' && thirdParties.map((thirdParty) => (
+                    <option key={thirdParty.tid} value={thirdParty.tid}>
+                      {thirdParty.third_party_name} - {thirdParty.phone}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {/* Driver Section */}
+            <div>
+              <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">
+                Driver
+              </label>
+              <select
+                value={sellForm.selectedEntity}
+                onChange={(e) => handleSellFormChange('selectedEntity', e.target.value)}
+                className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+              >
+                <option value="">Select Driver</option>
+                {drivers.map((driver) => (
+                  <option key={driver.did} value={driver.did}>
+                    {driver.driver_name} - {driver.phone_number}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Labour Section */}
+            <div>
+              <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">
+                Labour
+              </label>
+              <select
+                value={sellForm.selectedEntity}
+                onChange={(e) => handleSellFormChange('selectedEntity', e.target.value)}
+                className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+              >
+                <option value="">Select Labour</option>
+                {labours.map((labour) => (
+                  <option key={labour.lid} value={labour.lid}>
+                    {labour.full_name} - {labour.mobile_number}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Price per Kg */}
+            <div>
+              <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">
+                Price per Kg (₹)
+              </label>
+              <input
+                type="text"
+                value={sellForm.pricePerKg}
+                onChange={(e) => handleSellFormChange('pricePerKg', e.target.value)}
+                className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+                placeholder="Enter price per kg"
+                required
+              />
+            </div>
+
+            {/* Quantity */}
+            <div>
+              <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">
+                Quantity (kg)
+              </label>
+              <input
+                type="text"
+                value={sellForm.quantity}
+                onChange={(e) => handleSellFormChange('quantity', e.target.value)}
+                className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+                placeholder="Enter quantity"
+                required
+              />
+            </div>
+
+            {/* Total Amount (Read-only) */}
+            <div>
+              <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">
+                Total Amount (₹)
+              </label>
+              <input
+                type="text"
+                value={sellForm.totalAmount}
+                readOnly
+                className="w-full px-4 py-3 bg-[#D4F4E8] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] font-bold text-lg"
+                placeholder="0.00"
+              />
+            </div>
+
+            {/* Submit Button */}
+            <div className="flex gap-4">
+              <button
+                type="submit"
+                className="flex-1 px-6 py-3 bg-[#0D8568] text-white rounded-xl font-semibold hover:bg-[#0D7C66] transition-colors"
+              >
+                Sell Stock
+              </button>
+              <button
+                type="button"
+                onClick={() => setSellForm({
+                  stockItem: '',
+                  entityType: 'supplier',
+                  selectedEntity: '',
+                  pricePerKg: '',
+                  quantity: '',
+                  totalAmount: 0
+                })}
+                className="px-6 py-3 border border-[#D0E0DB] text-[#6B8782] rounded-xl font-semibold hover:bg-[#F0F4F3] transition-colors"
+              >
+                Reset
+              </button>
+            </div>
+          </form>
+        </div>
+          )}
+        </>
+      )}
+
+      {/* Inventory Stock Tab */}
+      {activeTab === 'inventory' && (
+        <>
+          {!showInventoryForm ? (
+            <>
+              <div className="mb-6 flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center">
+                {/* Inventory search */}
+                <div className="relative max-w-md w-full">
+                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#6B8782]" />
+                  <input
+                    type="text"
+                    placeholder="Search invoice, company, item, HSN..."
+                    value={inventorySearchTerm}
+                    onChange={(e) => {
+                      setInventorySearchTerm(e.target.value);
+                      setInventoryCurrentPage(1);
+                    }}
+                    className="w-full pl-12 pr-4 py-3 bg-[#F0F4F3] border-none rounded-xl text-[#0D5C4D] placeholder-[#6B8782] focus:outline-none focus:ring-2 focus:ring-[#0D8568] text-sm"
+                  />
+                </div>
+
+                {/* Add Inventory button */}
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => setShowInventoryForm(true)}
+                    className="px-6 py-3 bg-[#0D8568] text-white rounded-xl font-semibold hover:bg-[#0D7C66] transition-colors flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Inventory Stock
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-2xl overflow-hidden border border-[#D0E0DB]">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-[#D4F4E8]">
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Invoice No</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Company Name</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Item</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">HSN Code</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Quantity</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Price/Unit (₹)</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">GST (%)</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Total with GST (₹)</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {inventoryData.length === 0 ? (
+                        <tr>
+                          <td colSpan="9" className="px-6 py-8 text-center text-[#6B8782]">
+                            No inventory records available
+                          </td>
+                        </tr>
+                      ) : (
+                        inventoryPaginatedData.map((item, index) => (
+                          <tr key={item.id} className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'}`}>
+                            <td className="px-6 py-4 text-sm font-medium text-[#0D5C4D]">{item.invoice_no}</td>
+                            <td className="px-6 py-4 text-sm text-[#0D5C4D]">{item.company_name}</td>
+                            <td className="px-6 py-4 text-sm text-[#0D5C4D]">{item.item_name}</td>
+                            <td className="px-6 py-4 text-sm text-[#6B8782]">{item.hsn_code}</td>
+                            <td className="px-6 py-4 text-sm font-semibold text-[#047857]">{item.quantity}</td>
+                            <td className="px-6 py-4 text-sm text-[#0D5C4D]">{item.price_per_unit}</td>
+                            <td className="px-6 py-4 text-sm text-[#0D5C4D]">{item.gst_percentage}%</td>
+                            <td className="px-6 py-4 text-sm font-bold text-[#0D5C4D]">{item.total_with_gst}</td>
+                            <td className="px-6 py-4">
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleEditInventory(item)}
+                                  className="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-200 transition-colors"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteInventory(item.id)}
+                                  className="px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs font-medium hover:bg-red-200 transition-colors"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
+                  <div className="text-sm text-[#6B8782]">
+                    {filteredInventoryData.length > 0 ? (
+                      `Showing ${inventoryStartIndex + 1} to ${Math.min(
+                        inventoryStartIndex + inventoryItemsPerPage,
+                        filteredInventoryData.length
+                      )} of ${filteredInventoryData.length} records`
+                    ) : (
+                      'No inventory records found'
+                    )}
+                  </div>
+
+                  {totalInventoryPages > 1 && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setInventoryCurrentPage(prev => Math.max(prev - 1, 1))}
+                        disabled={inventoryCurrentPage === 1}
+                        className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        &lt;
+                      </button>
+
+                      {[...Array(totalInventoryPages)].map((_, index) => {
+                        const pageNum = index + 1;
+                        if (totalInventoryPages <= 7) {
+                          return (
+                            <button
+                              key={pageNum}
+                              onClick={() => setInventoryCurrentPage(pageNum)}
+                              className={`px-4 py-2 rounded-lg font-medium ${
+                                inventoryCurrentPage === pageNum
+                                  ? 'bg-[#0D8568] text-white'
+                                  : 'text-[#6B8782] hover:bg-[#D0E0DB]'
+                              }`}
+                            >
+                              {pageNum}
+                            </button>
+                          );
+                        } else {
+                          if (
+                            pageNum === 1 ||
+                            pageNum === totalInventoryPages ||
+                            (pageNum >= inventoryCurrentPage - 1 && pageNum <= inventoryCurrentPage + 1)
+                          ) {
+                            return (
+                              <button
+                                key={pageNum}
+                                onClick={() => setInventoryCurrentPage(pageNum)}
+                                className={`px-4 py-2 rounded-lg font-medium ${
+                                  inventoryCurrentPage === pageNum
+                                    ? 'bg-[#0D8568] text-white'
+                                    : 'text-[#6B8782] hover:bg-[#D0E0DB]'
+                                }`}
+                              >
+                                {pageNum}
+                              </button>
+                            );
+                          } else if (
+                            pageNum === inventoryCurrentPage - 2 ||
+                            pageNum === inventoryCurrentPage + 2
+                          ) {
+                            return (
+                              <span key={pageNum} className="px-2 py-2 text-[#6B8782]">
+                                ...
+                              </span>
+                            );
+                          }
+                        }
+                        return null;
+                      })}
+
+                      <button
+                        onClick={() =>
+                          setInventoryCurrentPage(prev => Math.min(prev + 1, totalInventoryPages))
+                        }
+                        disabled={inventoryCurrentPage === totalInventoryPages}
+                        className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        &gt;
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="bg-white rounded-2xl p-8 border border-[#D0E0DB]">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-[#0D5C4D]">{editingInventory ? 'Edit' : 'Add'} Inventory Stock</h2>
+                <button
+                  onClick={() => {
+                    setShowInventoryForm(false);
+                    setEditingInventory(null);
+                    setInventoryForm({
+                      invoiceNo: '',
+                      companyName: '',
+                      companyId: '',
+                      item: '',
+                      hsnCode: '',
+                      quantity: '',
+                      pricePerUnit: '',
+                      gst: '',
+                      totalWithGst: 0,
+                      inventoryId: ''
+                    });
+                  }}
+                  className="px-4 py-2 border border-[#D0E0DB] text-[#6B8782] rounded-lg font-medium hover:bg-[#F0F4F3] transition-colors"
+                >
+                  Back to List
+                </button>
+              </div>
+              <form onSubmit={handleInventorySubmit} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">Invoice No</label>
+                    <input
+                      type="text"
+                      value={inventoryForm.invoiceNo}
+                      onChange={(e) => handleInventoryFormChange('invoiceNo', e.target.value)}
+                      className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+                      placeholder="Enter invoice number"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">Company Name</label>
+                    <select
+                      value={inventoryForm.companyId}
+                      onChange={(e) => {
+                        const selectedCompany = inventoryCompanies.find(c => c.id === parseInt(e.target.value));
+                        handleInventoryFormChange('companyId', e.target.value);
+                        handleInventoryFormChange('companyName', selectedCompany?.name || '');
+                      }}
+                      className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+                      required
+                    >
+                      <option value="">Select company</option>
+                      {inventoryCompanies.map((company) => (
+                        <option key={company.id} value={company.id}>
+                          {company.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">Item</label>
+                    <select
+                      value={inventoryForm.inventoryId}
+                      onChange={(e) => {
+                        const selectedProduct = inventoryProducts.find(p => p.id === parseInt(e.target.value));
+                        handleInventoryFormChange('inventoryId', e.target.value);
+                        handleInventoryFormChange('item', selectedProduct?.name || '');
+                      }}
+                      className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+                      required
+                    >
+                      <option value="">Select item</option>
+                      {inventoryProducts.map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {product.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">HSN Code</label>
+                    <input
+                      type="text"
+                      value={inventoryForm.hsnCode}
+                      onChange={(e) => handleInventoryFormChange('hsnCode', e.target.value)}
+                      className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+                      placeholder="Enter HSN code"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">Quantity</label>
+                    <input
+                      type="text"
+                      value={inventoryForm.quantity}
+                      onChange={(e) => handleInventoryFormChange('quantity', e.target.value)}
+                      className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+                      placeholder="Enter quantity"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">Price per Unit (₹)</label>
+                    <input
+                      type="text"
+                      value={inventoryForm.pricePerUnit}
+                      onChange={(e) => handleInventoryFormChange('pricePerUnit', e.target.value)}
+                      className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+                      placeholder="Enter price per unit"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">GST (%)</label>
+                    <input
+                      type="text"
+                      value={inventoryForm.gst}
+                      onChange={(e) => handleInventoryFormChange('gst', e.target.value)}
+                      className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+                      placeholder="Enter GST percentage"
+                      required
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">Total with GST (₹)</label>
+                  <input
+                    type="text"
+                    value={inventoryForm.totalWithGst}
+                    readOnly
+                    className="w-full px-4 py-3 bg-[#D4F4E8] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] font-bold text-lg"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="flex gap-4">
+                  <button
+                    type="submit"
+                    className="flex-1 px-6 py-3 bg-[#0D8568] text-white rounded-xl font-semibold hover:bg-[#0D7C66] transition-colors"
+                  >
+                    {editingInventory ? 'Update' : 'Add'} Inventory
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInventoryForm({
+                      invoiceNo: '',
+                      companyName: '',
+                      companyId: '',
+                      item: '',
+                      hsnCode: '',
+                      quantity: '',
+                      pricePerUnit: '',
+                      gst: '',
+                      totalWithGst: 0,
+                      inventoryId: ''
+                    })}
+                    className="px-6 py-3 border border-[#D0E0DB] text-[#6B8782] rounded-xl font-semibold hover:bg-[#F0F4F3] transition-colors"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+export default StockManagement;
