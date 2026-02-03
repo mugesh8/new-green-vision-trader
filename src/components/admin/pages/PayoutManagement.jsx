@@ -4,6 +4,7 @@ import { Search, Filter, Download } from 'lucide-react';
 import { getAllOrders } from '../../../api/orderApi';
 import { getOrderAssignment } from '../../../api/orderAssignmentApi';
 import { getAllFarmers } from '../../../api/farmerApi';
+import { getPaidRecords, markAsPaid } from '../../../api/payoutApi';
 
 const PayoutManagement = () => {
   const navigate = useNavigate();
@@ -14,6 +15,7 @@ const PayoutManagement = () => {
 
   const [loading, setLoading] = useState(true);
   const [payouts, setPayouts] = useState([]); // farmer payouts only
+  const [markingPaid, setMarkingPaid] = useState(false);
 
   const formatCurrency = (amount) => {
     const value = Number.isFinite(amount) ? amount : 0;
@@ -33,13 +35,33 @@ const PayoutManagement = () => {
   const fetchFarmerPayouts = async () => {
     try {
       setLoading(true);
-      const [ordersRes, farmersRes] = await Promise.all([
+      const [ordersRes, farmersRes, paidRes] = await Promise.all([
         getAllOrders(),
-        getAllFarmers()
+        getAllFarmers(),
+        getPaidRecords('farmer').catch(() => ({ data: [] }))
       ]);
 
       const orders = ordersRes?.data || [];
       const farmers = farmersRes?.data || [];
+
+      const paidSet = new Set();
+      try {
+        const paidList = paidRes?.data ?? paidRes?.paidRecords ?? paidRes?.records ?? (Array.isArray(paidRes) ? paidRes : []);
+        paidList.forEach((item) => {
+          const k = item?.reference_key ?? item?.key ?? item?.id ?? (item?.orderId != null && item?.entity_id != null ? `${item.orderId}_${item.entity_id}` : (typeof item === 'string' ? item : null));
+          if (k) paidSet.add(k);
+        });
+        const stored = localStorage.getItem('payout-farmer-paid');
+        if (stored) {
+          try {
+            JSON.parse(stored).forEach((k) => paidSet.add(k));
+          } catch {
+            // ignore
+          }
+        }
+      } catch {
+        // ignore
+      }
 
       const farmerMap = new Map(
         farmers.map(f => [String(f.fid), f])
@@ -145,17 +167,18 @@ const PayoutManagement = () => {
 
             if (totalAmount > 0) {
               const farmer = farmerMap.get(group.farmerId);
+              const rowId = `${order.oid}_${group.farmerId}`;
+              const statusFromOrder = order.payment_status === 'paid' || order.payment_status === 'completed';
               processedPayouts.push({
-                id: `${order.oid}_${group.farmerId}`,
+                id: rowId,
+                orderId: order.oid,
+                entity_id: group.farmerId,
                 farmerName: farmer?.farmer_name || 'Unknown Farmer',
                 farmerCode: farmer?.farmer_id || `FID-${group.farmerId}`,
                 lastSupplied: order.order_received_date || order.createdAt,
                 quantityKg: totalQty,
                 amount: totalAmount,
-                status:
-                  order.payment_status === 'paid' || order.payment_status === 'completed'
-                    ? 'Paid'
-                    : 'Pending'
+                status: paidSet.has(rowId) ? 'Paid' : (statusFromOrder ? 'Paid' : 'Pending')
               });
             }
           });
@@ -227,15 +250,31 @@ const PayoutManagement = () => {
     { label: 'Average Payout', value: formatCurrency(summaryStats.averagePayout) }
   ];
 
-  const getStatusColor = (status) => {
-    return status === 'Paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-yellow-100 text-yellow-700';
-  };
-
-  const getActionButton = (status) => {
-    if (status === 'Pending') {
-      return 'bg-emerald-600 hover:bg-emerald-700 text-white';
+  const handlePay = async (payout) => {
+    if (payout.status === 'Paid') return;
+    try {
+      setMarkingPaid(true);
+      const rowData = {
+        key: payout.id,
+        id: payout.id,
+        entity_id: payout.entity_id ?? payout.id.split('_')[1],
+        orderId: payout.orderId ?? payout.id.split('_')[0],
+        amount: Number(payout.amount) || 0,
+        farmerName: payout.farmerName,
+        farmerCode: payout.farmerCode,
+        quantityKg: payout.quantityKg,
+        lastSupplied: payout.lastSupplied,
+        status: 'Paid',
+        ...payout
+      };
+      await markAsPaid('farmer', rowData);
+      setPayouts((prev) => prev.map((p) => (p.id === payout.id ? { ...p, status: 'Paid' } : p)));
+    } catch (error) {
+      console.error('Error marking farmer payout as paid:', error);
+      alert(error?.message || error?.error || 'Failed to mark as paid');
+    } finally {
+      setMarkingPaid(false);
     }
-    return 'bg-gray-200 hover:bg-gray-300 text-gray-700';
   };
 
   return (
@@ -345,9 +384,6 @@ const PayoutManagement = () => {
                     Amount
                   </th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
-                    Status
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
                     Action
                   </th>
                 </tr>
@@ -355,13 +391,13 @@ const PayoutManagement = () => {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan="5" className="px-6 py-8 text-center text-[#6B8782]">
+                    <td colSpan="4" className="px-6 py-8 text-center text-[#6B8782]">
                       Loading farmer payouts...
                     </td>
                   </tr>
                 ) : paginatedPayouts.length === 0 ? (
                   <tr>
-                    <td colSpan="5" className="px-6 py-8 text-center text-[#6B8782]">
+                    <td colSpan="4" className="px-6 py-8 text-center text-[#6B8782]">
                       No farmer payouts found
                     </td>
                   </tr>
@@ -390,22 +426,19 @@ const PayoutManagement = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <span
-                          className={`inline-block px-4 py-1.5 rounded-full text-xs font-medium ${getStatusColor(
-                            payout.status
-                          )}`}
-                        >
-                          {payout.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <button
-                          className={`px-6 py-2 rounded-lg text-xs font-semibold transition-colors ${getActionButton(
-                            payout.status
-                          )}`}
-                        >
-                          {payout.status === 'Paid' ? 'View' : 'Pay'}
-                        </button>
+                        {payout.status === 'Paid' ? (
+                          <span className="inline-block px-4 py-1.5 rounded-full text-xs font-medium bg-[#D4F4E8] text-[#047857]">
+                            Paid
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handlePay(payout)}
+                            disabled={markingPaid}
+                            className="px-6 py-2 rounded-lg text-xs font-semibold transition-colors bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-60"
+                          >
+                            {markingPaid ? 'Saving...' : 'Pay'}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))

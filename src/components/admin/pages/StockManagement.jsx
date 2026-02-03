@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Download, ChevronDown, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { Search, Download, ChevronDown, ChevronLeft, ChevronRight, Plus, Check, User } from 'lucide-react';
 import { getAllStock } from '../../../api/orderAssignmentApi';
 import { getAllSuppliers } from '../../../api/supplierApi';
 import { getAllThirdParties } from '../../../api/thirdPartyApi';
@@ -54,13 +54,57 @@ const StockManagement = () => {
 
   // Sell Stock Form State
   const [sellForm, setSellForm] = useState({
-    stockItem: '',
+    selectedStockItems: [], // array of stock_id for multi-select
     entityType: 'supplier', // 'supplier' or 'thirdParty'
     selectedEntity: '',
-    pricePerKg: '',
-    quantity: '',
+    driverId: '',
+    selectedLabours: [], // array of labour ids for multi-select
+    itemDetails: {}, // { [stockId]: { pricePerKg: '', quantity: '' } } per selected item
     totalAmount: 0
   });
+  // Sell form dropdown open state ('stock' | 'labour' | null)
+  const [openSellDropdown, setOpenSellDropdown] = useState(null);
+
+  // Aggregated stock options: dedupe by product name, sum quantity (for dropdown display)
+  const aggregatedStockOptions = React.useMemo(() => {
+    const byProduct = {};
+    (stockData || []).forEach((item) => {
+      const id = Number(item.stock_id ?? item.sid);
+      if (Number.isNaN(id)) return;
+      const productName = item.products || item.product_name || item.product || '';
+      const qty = parseFloat(item.quantity) || 0;
+      if (!productName) return;
+      if (!byProduct[productName]) {
+        byProduct[productName] = { productName, totalQuantity: 0, stockIds: [] };
+      }
+      byProduct[productName].totalQuantity += qty;
+      byProduct[productName].stockIds.push(id);
+    });
+    return Object.values(byProduct);
+  }, [stockData]);
+
+  // Number of selected product groups (for display), not raw stock row count
+  const selectedStockProductCount = React.useMemo(() => {
+    const selected = (sellForm.selectedStockItems || []).map(id => Number(id));
+    return aggregatedStockOptions.filter(opt =>
+      opt.stockIds.some(id => selected.includes(Number(id)))
+    ).length;
+  }, [sellForm.selectedStockItems, aggregatedStockOptions]);
+
+  // Selected products grouped like the dropdown: one entry per product with total stock kg
+  const selectedProductsForSell = React.useMemo(() => {
+    const selectedIds = (sellForm.selectedStockItems || []).map(id => Number(id));
+    return (aggregatedStockOptions || [])
+      .filter(opt => opt.stockIds.some(id => selectedIds.includes(Number(id))))
+      .map(opt => {
+        const selectedStockIds = opt.stockIds.filter(id => selectedIds.includes(Number(id)));
+        const totalQuantity = selectedStockIds.reduce((sum, id) => {
+          const row = (stockData || []).find(r => Number(r.stock_id ?? r.sid) === Number(id));
+          return sum + (parseFloat(row?.quantity) || 0);
+        }, 0);
+        return { productName: opt.productName, stockIds: selectedStockIds, totalQuantity };
+      });
+  }, [sellForm.selectedStockItems, aggregatedStockOptions, stockData]);
 
   // Inventory Stock State
   const [inventoryData, setInventoryData] = useState([]);
@@ -220,6 +264,17 @@ const StockManagement = () => {
       console.error('Error checking low stock:', error);
     }
   }, [hasExistingLowStockNotification]);
+
+  // Close sell form dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (openSellDropdown !== null && !event.target.closest('.sell-dropdown')) {
+        setOpenSellDropdown(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [openSellDropdown]);
 
   useEffect(() => {
     if (!dataFetched.stock) {
@@ -453,18 +508,62 @@ const StockManagement = () => {
     setEditingPrice('');
   };
 
+  // Helper: today's market price from product price_date (same as OrderAssignCreateStage4)
+  const getTodaysMarketPrice = (product) => {
+    if (!product?.price_date) return null;
+    try {
+      const priceData = typeof product.price_date === 'string'
+        ? JSON.parse(product.price_date)
+        : product.price_date;
+      if (!Array.isArray(priceData)) return null;
+      const today = new Date().toISOString().split('T')[0];
+      const todaysPrice = priceData.find(entry => {
+        if (!entry.date) return false;
+        const entryDate = new Date(entry.date).toISOString().split('T')[0];
+        return entryDate === today;
+      });
+      return todaysPrice ? parseFloat(todaysPrice.price) : null;
+    } catch (error) {
+      console.error('Error parsing price_date:', error);
+      return null;
+    }
+  };
+
+  // Market price display for sell form: show price only if updated today; otherwise warning only (no old price)
+  const getMarketPriceForSell = (product) => {
+    const todaysPrice = product ? getTodaysMarketPrice(product) : null;
+    const today = new Date().toISOString().split('T')[0];
+    const updatedAtDate = product?.updatedAt ? new Date(product.updatedAt).toISOString().split('T')[0] : '';
+    const updatedToday = updatedAtDate === today;
+    if (todaysPrice != null && todaysPrice > 0) {
+      return { price: todaysPrice, isUpdatedToday: true };
+    }
+    if (updatedToday && product) {
+      const currentPrice = parseFloat(product.current_price) || 0;
+      if (currentPrice > 0) return { price: currentPrice, isUpdatedToday: true };
+    }
+    return { price: null, isUpdatedToday: false };
+  };
+
   const handleSellFormChange = (field, value) => {
+    setSellForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Update price/quantity for a product and recalc total
+  const handleSellItemDetailChange = (productName, field, value) => {
     setSellForm(prev => {
-      const updated = { ...prev, [field]: value };
-
-      // Calculate total amount when price or quantity changes
-      if (field === 'pricePerKg' || field === 'quantity') {
-        const price = parseFloat(field === 'pricePerKg' ? value : updated.pricePerKg) || 0;
-        const qty = parseFloat(field === 'quantity' ? value : updated.quantity) || 0;
-        updated.totalAmount = (price * qty).toFixed(2);
-      }
-
-      return updated;
+      const details = prev.itemDetails || {};
+      const current = details[productName] || { pricePerKg: '', quantity: '' };
+      const nextDetails = { ...details, [productName]: { ...current, [field]: value } };
+      const productNames = (aggregatedStockOptions || [])
+        .filter(opt => (prev.selectedStockItems || []).map(i => Number(i)).some(id => opt.stockIds.includes(id)))
+        .map(o => o.productName);
+      let total = 0;
+      productNames.forEach(pname => {
+        const d = nextDetails[pname] || {};
+        total += (parseFloat(d.pricePerKg) || 0) * (parseFloat(d.quantity) || 0);
+      });
+      return { ...prev, itemDetails: nextDetails, totalAmount: total.toFixed(2) };
     });
   };
 
@@ -481,35 +580,75 @@ const StockManagement = () => {
   const handleSellSubmit = async (e) => {
     e.preventDefault();
     try {
-      const payload = {
-        stockId: parseInt(sellForm.stockItem),
-        entityType: sellForm.entityType,
-        entityId: parseInt(sellForm.selectedEntity),
-        driverId: null,
-        labourId: null,
-        pricePerKg: parseFloat(sellForm.pricePerKg),
-        quantity: parseFloat(sellForm.quantity),
-        totalAmount: parseFloat(sellForm.totalAmount)
-      };
+      const entityId = parseInt(sellForm.selectedEntity);
+      const driverId = sellForm.driverId ? parseInt(sellForm.driverId) : null;
+      const labourIds = Array.isArray(sellForm.selectedLabours) ? sellForm.selectedLabours : [];
+      const firstLabourId = labourIds.length > 0 ? parseInt(labourIds[0]) : null;
 
-      await createSellStock(payload);
+      const itemDetails = sellForm.itemDetails || {};
+      const selectedProducts = (aggregatedStockOptions || [])
+        .filter(opt => (sellForm.selectedStockItems || []).map(i => Number(i)).some(id => opt.stockIds.includes(Number(id))))
+        .map(opt => {
+          const selectedStockIds = opt.stockIds.filter(id => (sellForm.selectedStockItems || []).map(i => Number(i)).includes(Number(id)));
+          return { productName: opt.productName, stockIds: selectedStockIds };
+        });
+
+      if (selectedProducts.length === 0) {
+        alert('Please select at least one stock item.');
+        return;
+      }
+
+      for (const { productName, stockIds } of selectedProducts) {
+        const detail = itemDetails[productName] || {};
+        const pricePerKg = parseFloat(detail.pricePerKg) || 0;
+        const quantityToSell = parseFloat(detail.quantity) || 0;
+        if (!quantityToSell || !pricePerKg) {
+          alert(`Please enter quantity and price for "${productName}".`);
+          return;
+        }
+        let remaining = quantityToSell;
+        for (const stockId of stockIds) {
+          if (remaining <= 0) break;
+          const row = stockData.find(s => Number(s.stock_id ?? s.sid) === Number(stockId));
+          const available = row ? (parseFloat(row.quantity) || 0) : 0;
+          const qty = Math.min(available, remaining);
+          if (qty <= 0) continue;
+          const totalAmount = (pricePerKg * qty).toFixed(2);
+          await createSellStock({
+            stockId: parseInt(stockId),
+            entityType: sellForm.entityType,
+            entityId,
+            driverId,
+            labourId: firstLabourId,
+            pricePerKg,
+            quantity: qty,
+            totalAmount: parseFloat(totalAmount)
+          });
+          remaining -= qty;
+        }
+        if (remaining > 0) {
+          alert(`Not enough stock for "${productName}". Requested ${quantityToSell} kg but only ${(quantityToSell - remaining).toFixed(2)} kg available in selected rows.`);
+          return;
+        }
+      }
+
       fetchSellStocks();
-      
-      // Refresh stock data and check for low stock after selling
+
       const stockResponse = await getAllStock();
       if (stockResponse.success) {
         const updatedStock = stockResponse.data || [];
         setStockData(updatedStock);
         await checkLowStock(updatedStock);
       }
-      
+
       setShowSellForm(false);
       setSellForm({
-        stockItem: '',
+        selectedStockItems: [],
         entityType: 'supplier',
         selectedEntity: '',
-        pricePerKg: '',
-        quantity: '',
+        driverId: '',
+        selectedLabours: [],
+        itemDetails: {},
         totalAmount: 0
       });
       alert('Stock sold successfully!');
@@ -1213,24 +1352,81 @@ const StockManagement = () => {
             </button>
           </div>
           <form onSubmit={handleSellSubmit} className="space-y-6">
-            {/* Stock Item Selection */}
-            <div>
+            {/* Stock Item Selection - dropdown multiselect (aggregated by product) */}
+            <div className="sell-dropdown">
               <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">
                 Select Stock Item
               </label>
-              <select
-                value={sellForm.stockItem}
-                onChange={(e) => handleSellFormChange('stockItem', e.target.value)}
-                className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
-                required
-              >
-                <option value="">Select a stock item</option>
-                {stockData.map((item, index) => (
-                  <option key={item.sid || index} value={item.sid}>
-                    {item.order_id} - {item.products} ({item.quantity} kg)
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setOpenSellDropdown(openSellDropdown === 'stock' ? null : 'stock')}
+                  className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] flex items-center justify-between"
+                >
+                  <span className="text-left truncate">
+                    {selectedStockProductCount > 0
+                      ? `${selectedStockProductCount} item(s) selected`
+                      : 'Select stock item(s)'}
+                  </span>
+                  <ChevronDown className="w-4 h-4 text-[#6B8782] flex-shrink-0 ml-2" />
+                </button>
+
+                {openSellDropdown === 'stock' && (
+                  <div className="absolute z-50 mt-1 w-full bg-white border border-[#D0E0DB] rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                    {aggregatedStockOptions.length === 0 ? (
+                      <div className="px-4 py-3 text-sm text-[#6B8782]">No stock items available</div>
+                    ) : (
+                      aggregatedStockOptions.map((opt) => {
+                        const selected = (sellForm.selectedStockItems || []).map(id => Number(id));
+                        const allSelected = opt.stockIds.every(id => selected.includes(Number(id)));
+                        const someSelected = opt.stockIds.some(id => selected.includes(Number(id)));
+                        const toggleGroup = () => {
+                          setSellForm(prev => {
+                            const current = prev.selectedStockItems || [];
+                            const next = allSelected
+                              ? current.filter(id => !opt.stockIds.includes(id))
+                              : [...new Set([...current, ...opt.stockIds])];
+                            const selectedProductGroups = (aggregatedStockOptions || []).filter(o =>
+                              o.stockIds.some(id => next.includes(Number(id)))
+                            );
+                            const details = {};
+                            selectedProductGroups.forEach(o => {
+                              details[o.productName] = (prev.itemDetails || {})[o.productName] || {
+                                quantity: '',
+                                pricePerKg: ''
+                              };
+                            });
+                            let total = 0;
+                            Object.values(details).forEach(d => {
+                              total += (parseFloat(d.pricePerKg) || 0) * (parseFloat(d.quantity) || 0);
+                            });
+                            return { ...prev, selectedStockItems: next, itemDetails: details, totalAmount: total.toFixed(2) };
+                          });
+                        };
+                        return (
+                          <label
+                            key={opt.productName}
+                            onClick={(e) => e.stopPropagation()}
+                            className={`w-full cursor-pointer px-4 py-2.5 text-sm hover:bg-[#F0F4F3] flex items-center gap-3 ${someSelected ? 'bg-[#D4F4E8] text-[#0D5C4D]' : 'text-[#0D5C4D]'}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={someSelected}
+                              ref={el => { if (el) el.indeterminate = someSelected && !allSelected; }}
+                              onChange={toggleGroup}
+                              className="w-4 h-4 text-[#0D8568] focus:ring-[#0D8568] rounded flex-shrink-0"
+                            />
+                            <span>{opt.productName} — <strong>{parseFloat(opt.totalQuantity).toFixed(2)} kg</strong></span>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
+              {selectedStockProductCount > 0 && (
+                <p className="mt-1 text-xs text-[#6B8782]">{selectedStockProductCount} product(s) selected</p>
+              )}
             </div>
 
             {/* Sell To Section - Supplier/Third Party */}
@@ -1300,8 +1496,8 @@ const StockManagement = () => {
                 Driver
               </label>
               <select
-                value={sellForm.selectedEntity}
-                onChange={(e) => handleSellFormChange('selectedEntity', e.target.value)}
+                value={sellForm.driverId}
+                onChange={(e) => handleSellFormChange('driverId', e.target.value)}
                 className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
               >
                 <option value="">Select Driver</option>
@@ -1313,54 +1509,137 @@ const StockManagement = () => {
               </select>
             </div>
 
-            {/* Labour Section */}
-            <div>
+            {/* Labour Section - dropdown multiselect (same pattern as OrderAssignCreateStage2) */}
+            <div className="sell-dropdown">
               <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">
                 Labour
               </label>
-              <select
-                value={sellForm.selectedEntity}
-                onChange={(e) => handleSellFormChange('selectedEntity', e.target.value)}
-                className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
-              >
-                <option value="">Select Labour</option>
-                {labours.map((labour) => (
-                  <option key={labour.lid} value={labour.lid}>
-                    {labour.full_name} - {labour.mobile_number}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setOpenSellDropdown(openSellDropdown === 'labour' ? null : 'labour')}
+                  className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] flex items-center justify-between"
+                >
+                  <span className="text-left truncate">
+                    {sellForm.selectedLabours?.length > 0
+                      ? `${sellForm.selectedLabours.length} labour(s) selected`
+                      : 'Select Labour'}
+                  </span>
+                  <ChevronDown className="w-4 h-4 text-[#6B8782] flex-shrink-0 ml-2" />
+                </button>
+
+                {openSellDropdown === 'labour' && (
+                  <div className="absolute z-50 mt-1 w-full bg-white border border-[#D0E0DB] rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                    {labours.length > 0 ? (
+                      labours.map((labour) => {
+                        const labourId = String(labour.lid);
+                        const isSelected = (sellForm.selectedLabours || []).includes(labourId);
+
+                        return (
+                          <label
+                            key={labour.lid}
+                            onClick={(e) => e.stopPropagation()}
+                            className={`w-full cursor-pointer px-4 py-2.5 text-sm hover:bg-[#F0F4F3] flex items-center gap-3 ${isSelected ? 'bg-[#D4F4E8] text-[#0D5C4D]' : 'text-[#0D5C4D]'}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                const current = sellForm.selectedLabours || [];
+                                const next = isSelected
+                                  ? current.filter(id => id !== labourId)
+                                  : [...current, labourId];
+                                handleSellFormChange('selectedLabours', next);
+                              }}
+                              className="w-4 h-4 text-[#0D8568] focus:ring-[#0D8568] rounded flex-shrink-0"
+                            />
+                            <span>{labour.full_name} — {labour.mobile_number}</span>
+                          </label>
+                        );
+                      })
+                    ) : (
+                      <div className="px-4 py-3 text-sm text-[#6B8782]">No labours available</div>
+                    )}
+                  </div>
+                )}
+              </div>
+              {sellForm.selectedLabours?.length > 0 && (
+                <p className="mt-1 text-xs text-[#0D5C4D]">{sellForm.selectedLabours.length} labour(s) selected</p>
+              )}
             </div>
 
-            {/* Price per Kg */}
-            <div>
-              <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">
-                Price per Kg (₹)
-              </label>
-              <input
-                type="text"
-                value={sellForm.pricePerKg}
-                onChange={(e) => handleSellFormChange('pricePerKg', e.target.value)}
-                className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
-                placeholder="Enter price per kg"
-                required
-              />
-            </div>
-
-            {/* Quantity */}
-            <div>
-              <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">
-                Quantity (kg)
-              </label>
-              <input
-                type="text"
-                value={sellForm.quantity}
-                onChange={(e) => handleSellFormChange('quantity', e.target.value)}
-                className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
-                placeholder="Enter quantity"
-                required
-              />
-            </div>
+            {/* Per-product price and quantity (grouped like the stock dropdown, with total stock kg) */}
+            {selectedProductsForSell.length > 0 && (
+              <div>
+                <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">
+                  Price & Quantity per product
+                </label>
+                <div className="space-y-4">
+                  {selectedProductsForSell.map(({ productName, totalQuantity }) => {
+                    const detail = (sellForm.itemDetails || {})[productName] || { pricePerKg: '', quantity: '' };
+                    const matchedProduct = (products || []).find(p =>
+                      (p.product_name || '').toLowerCase().trim() === (productName || '').toLowerCase().trim()
+                    );
+                    const { price: marketPrice, isUpdatedToday } = matchedProduct ? getMarketPriceForSell(matchedProduct) : { price: null, isUpdatedToday: false };
+                    const hasValidPrice = marketPrice != null && marketPrice > 0;
+                    return (
+                      <div
+                        key={productName}
+                        className="p-4 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl space-y-3"
+                      >
+                        <div className="font-medium text-[#0D5C4D]">
+                          {productName}
+                          <span className="ml-2 text-xs font-normal text-[#6B8782]">
+                            (total stock: {totalQuantity.toFixed(2)} kg)
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-medium text-[#6B8782] mb-1">Quantity (kg)</label>
+                            <input
+                              type="text"
+                              value={detail.quantity}
+                              onChange={(e) => handleSellItemDetailChange(productName, 'quantity', e.target.value)}
+                              className={`w-full px-3 py-2 bg-white border rounded-lg text-[#0D5C4D] focus:outline-none focus:ring-2 text-sm ${(parseFloat(detail.quantity) || 0) > totalQuantity ? 'border-red-500 focus:ring-red-500' : 'border-[#D0E0DB] focus:ring-[#0D8568]'}`}
+                              placeholder="Qty"
+                              required
+                            />
+                            {(parseFloat(detail.quantity) || 0) > totalQuantity && (
+                              <p className="mt-1 text-xs font-medium text-red-600">
+                                Quantity exceeds available stock ({totalQuantity.toFixed(2)} kg)
+                              </p>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-[#6B8782] mb-1">Market price (₹/kg)</label>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {hasValidPrice && isUpdatedToday ? (
+                                <span className="text-sm font-semibold text-[#0D5C4D]">
+                                  ₹{Number(marketPrice).toFixed(2)}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded-full font-medium">
+                                  Update price
+                                </span>
+                              )}
+                            </div>
+                            <label className="block text-xs font-medium text-[#6B8782] mb-1 mt-2">Price per Kg (₹)</label>
+                            <input
+                              type="text"
+                              value={detail.pricePerKg}
+                              onChange={(e) => handleSellItemDetailChange(productName, 'pricePerKg', e.target.value)}
+                              className="w-full px-3 py-2 bg-white border border-[#D0E0DB] rounded-lg text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] text-sm"
+                              placeholder="Price"
+                              required
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Total Amount (Read-only) */}
             <div>
@@ -1387,11 +1666,12 @@ const StockManagement = () => {
               <button
                 type="button"
                 onClick={() => setSellForm({
-                  stockItem: '',
+                  selectedStockItems: [],
                   entityType: 'supplier',
                   selectedEntity: '',
-                  pricePerKg: '',
-                  quantity: '',
+                  driverId: '',
+                  selectedLabours: [],
+                  itemDetails: {},
                   totalAmount: 0
                 })}
                 className="px-6 py-3 border border-[#D0E0DB] text-[#6B8782] rounded-xl font-semibold hover:bg-[#F0F4F3] transition-colors"

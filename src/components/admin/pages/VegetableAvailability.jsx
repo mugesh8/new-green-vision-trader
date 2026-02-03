@@ -99,10 +99,64 @@ const VegetableAvailability = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      // Build vegetable history entry for this change
+      const currentHistoryEntry = {
+        vegetable_name: formData.vegetable_name,
+        from_date: formData.from_date,
+        to_date: formData.to_date
+      };
+
+      // Preserve existing history (if any) and append the new entry
+      let existingHistory = [];
+
+      // 1) If we are editing an existing record, use its history
+      if (modalMode === 'edit' && selectedItem?.vegetable_history) {
+        try {
+          const rawHistory = selectedItem.vegetable_history;
+          const parsedHistory = typeof rawHistory === 'string' ? JSON.parse(rawHistory) : rawHistory;
+          if (Array.isArray(parsedHistory)) {
+            existingHistory = parsedHistory;
+          }
+        } catch (err) {
+          console.warn('Failed to parse existing vegetable_history from selectedItem:', err);
+        }
+      }
+
+      // 2) If we are adding a new availability, try to pull history
+      //    from any existing records for this same vegetable name
+      if (modalMode === 'add') {
+        try {
+          const sameVegRecords = availabilities.filter(
+            (item) => item.vegetable_name === formData.vegetable_name && item.vegetable_history
+          );
+
+          sameVegRecords.forEach((item) => {
+            try {
+              const rawHistory = item.vegetable_history;
+              const parsedHistory =
+                typeof rawHistory === 'string' ? JSON.parse(rawHistory) : rawHistory;
+
+              if (Array.isArray(parsedHistory)) {
+                existingHistory = [...existingHistory, ...parsedHistory];
+              }
+            } catch (innerErr) {
+              console.warn('Failed to parse vegetable_history from existing record:', innerErr);
+            }
+          });
+        } catch (err) {
+          console.warn('Failed to build history from existing availabilities:', err);
+        }
+      }
+
+      const fullHistory = [...existingHistory, currentHistoryEntry];
+
       const data = {
         farmer_id: id,
         farmer_name: farmer?.farmer_name,
-        ...formData
+        ...formData,
+        // Store as JSON string so we never overwrite the previous data;
+        // backend currently returns this as a JSON string.
+        vegetable_history: JSON.stringify(fullHistory)
       };
 
       if (modalMode === 'add') {

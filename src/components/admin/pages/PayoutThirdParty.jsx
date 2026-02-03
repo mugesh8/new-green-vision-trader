@@ -4,6 +4,7 @@ import { Search, Filter, Download } from 'lucide-react';
 import { getAllOrders } from '../../../api/orderApi';
 import { getOrderAssignment } from '../../../api/orderAssignmentApi';
 import { getAllThirdParties } from '../../../api/thirdPartyApi';
+import { getPaidRecords, markAsPaid } from '../../../api/payoutApi';
 
 const PayoutThirdParty = () => {
   const navigate = useNavigate();
@@ -13,6 +14,7 @@ const PayoutThirdParty = () => {
 
   const [loading, setLoading] = useState(true);
   const [payouts, setPayouts] = useState([]);
+  const [markingPaid, setMarkingPaid] = useState(false);
 
   const formatCurrency = (amount) => {
     const value = Number.isFinite(amount) ? amount : 0;
@@ -31,13 +33,20 @@ const PayoutThirdParty = () => {
   const fetchThirdPartyPayouts = async () => {
     try {
       setLoading(true);
-      const [ordersRes, thirdRes] = await Promise.all([
+      const [ordersRes, thirdRes, paidRes] = await Promise.all([
         getAllOrders(),
-        getAllThirdParties()
+        getAllThirdParties(),
+        getPaidRecords('third_party').catch(() => ({ data: [] }))
       ]);
 
       const orders = ordersRes?.data || [];
       const thirdParties = thirdRes?.data || [];
+      const paidList = paidRes?.data ?? paidRes?.paidRecords ?? paidRes?.records ?? (Array.isArray(paidRes) ? paidRes : []);
+      const paidSet = new Set();
+      paidList.forEach((item) => {
+        const k = item?.reference_key ?? item?.key ?? item?.id ?? (item?.orderId != null && item?.entity_id != null ? `${item.orderId}_${item.entity_id}` : (typeof item === 'string' ? item : null));
+        if (k) paidSet.add(k);
+      });
 
       const thirdMap = new Map(
         thirdParties.map(t => [String(t.tpid), t])
@@ -140,17 +149,18 @@ const PayoutThirdParty = () => {
 
             if (totalAmount > 0) {
               const third = thirdMap.get(group.thirdId);
+              const rowId = `${order.oid}_${group.thirdId}`;
+              const statusFromOrder = order.payment_status === 'paid' || order.payment_status === 'completed';
               processedPayouts.push({
-                id: `${order.oid}_${group.thirdId}`,
+                id: rowId,
+                orderId: order.oid,
+                entity_id: group.thirdId,
                 thirdName: third?.third_party_name || 'Unknown Third Party',
                 thirdCode: third?.third_party_id || `TP-${group.thirdId}`,
                 lastSupplied: order.order_received_date || order.createdAt,
                 quantityKg: totalQty,
                 amount: totalAmount,
-                status:
-                  order.payment_status === 'paid' || order.payment_status === 'completed'
-                    ? 'Paid'
-                    : 'Pending'
+                status: paidSet.has(rowId) ? 'Paid' : (statusFromOrder ? 'Paid' : 'Pending')
               });
             }
           });
@@ -228,6 +238,33 @@ const PayoutThirdParty = () => {
     status === 'Paid'
       ? 'bg-gray-200 hover:bg-gray-300 text-gray-700'
       : 'bg-emerald-600 hover:bg-emerald-700 text-white';
+
+  const handlePay = async (payout) => {
+    if (payout.status === 'Paid') return;
+    try {
+      setMarkingPaid(true);
+      const rowData = {
+        key: payout.id,
+        id: payout.id,
+        entity_id: payout.entity_id ?? payout.id.split('_')[1],
+        orderId: payout.orderId ?? payout.id.split('_')[0],
+        amount: Number(payout.amount) || 0,
+        thirdName: payout.thirdName,
+        thirdCode: payout.thirdCode,
+        quantityKg: payout.quantityKg,
+        lastSupplied: payout.lastSupplied,
+        status: 'Paid',
+        ...payout
+      };
+      await markAsPaid('third_party', rowData);
+      setPayouts((prev) => prev.map((p) => (p.id === payout.id ? { ...p, status: 'Paid' } : p)));
+    } catch (error) {
+      console.error('Error marking third party payout as paid:', error);
+      alert(error?.message || error?.error || 'Failed to mark as paid');
+    } finally {
+      setMarkingPaid(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 p-4 sm:p-6 lg:p-8">
@@ -388,11 +425,13 @@ const PayoutThirdParty = () => {
                       </td>
                       <td className="px-6 py-4">
                         <button
+                          onClick={() => payout.status === 'Pending' ? handlePay(payout) : undefined}
+                          disabled={markingPaid && payout.status === 'Pending'}
                           className={`px-6 py-2 rounded-lg text-xs font-semibold transition-colors ${getActionButton(
                             payout.status
-                          )}`}
+                          )} ${payout.status === 'Pending' ? 'cursor-pointer' : 'cursor-default'}`}
                         >
-                          {payout.status === 'Paid' ? 'View' : 'Pay'}
+                          {payout.status === 'Paid' ? 'View' : markingPaid ? 'Saving...' : 'Pay'}
                         </button>
                       </td>
                     </tr>

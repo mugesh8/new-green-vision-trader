@@ -118,7 +118,6 @@ const OrderManagement = () => {
     }
   };
 
-  // Fetch drafts on mount so tab count is correct, and when switching to drafts tab
   useEffect(() => {
     fetchDrafts();
   }, []);

@@ -4,6 +4,7 @@ import { Search, ChevronDown, ArrowLeft } from 'lucide-react';
 import { getAllOrders } from '../../../api/orderApi';
 import { getOrderAssignment } from '../../../api/orderAssignmentApi';
 import { getAllThirdParties, getThirdPartyById } from '../../../api/thirdPartyApi';
+import { getPaidRecords, markAsPaid } from '../../../api/payoutApi';
 
 const cleanForMatching = (name) => {
   if (!name) return '';
@@ -24,6 +25,7 @@ const ThirdPartyPayout = () => {
   const [timeFilter, setTimeFilter] = useState('All Time');
   const [statusFilter, setStatusFilter] = useState('All Status');
   const [currentPage, setCurrentPage] = useState(1);
+  const [markingPaid, setMarkingPaid] = useState(false);
 
   useEffect(() => {
     if (!thirdPartyId) {
@@ -37,16 +39,33 @@ const ThirdPartyPayout = () => {
     if (!thirdPartyId) return;
     try {
       setLoading(true);
-      const [ordersRes, thirdRes, thirdPartyRes] = await Promise.all([
+      const [ordersRes, thirdRes, thirdPartyRes, paidRes] = await Promise.all([
         getAllOrders().catch(() => ({ data: [] })),
         getAllThirdParties().catch(() => ({ data: [] })),
-        getThirdPartyById(thirdPartyId).catch(() => null)
+        getThirdPartyById(thirdPartyId).catch(() => null),
+        getPaidRecords('third_party', { entity_id: thirdPartyId }).catch(() => ({ data: [] }))
       ]);
 
       const orders = ordersRes?.data || ordersRes || [];
       const thirdParties = thirdRes?.data || thirdRes || [];
       const thirdPartyData = thirdPartyRes?.data ?? thirdPartyRes ?? thirdParties.find((t) => String(t.tpid) === thirdPartyId);
       setThirdParty(thirdPartyData || null);
+
+      const paidList = paidRes?.data ?? paidRes?.paidRecords ?? paidRes?.records ?? (Array.isArray(paidRes) ? paidRes : []);
+      const paidSet = new Set();
+      paidList.forEach((item) => {
+        const k = item?.reference_key ?? item?.key ?? item?.id ?? (item?.orderId != null && item?.entity_id != null ? `${item.orderId}_${item.entity_id}` : (typeof item === 'string' ? item : null));
+        if (k) paidSet.add(k);
+      });
+      try {
+        const stored = localStorage.getItem('payout-thirdparty-paid');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          (Array.isArray(parsed) ? parsed : []).forEach((key) => paidSet.add(key));
+        }
+      } catch {
+        // ignore
+      }
 
       const thirdMap = new Map(thirdParties.map((t) => [String(t.tpid), t]));
       const processedPayouts = [];
@@ -139,8 +158,10 @@ const ThirdPartyPayout = () => {
             const orderDateStr = orderDate
               ? new Date(orderDate).toISOString().split('T')[0]
               : '';
+            const rowId = `${order.oid}_${group.thirdId}`;
+            const statusFromOrder = order.payment_status === 'paid' || order.payment_status === 'completed';
             processedPayouts.push({
-              id: `${order.oid}_${group.thirdId}`,
+              id: rowId,
               orderId: order.oid,
               thirdPartyName: thirdInfo?.third_party_name || 'Unknown Third Party',
               thirdPartyCode: thirdInfo?.third_party_id || `TP-${group.thirdId}`,
@@ -148,10 +169,7 @@ const ThirdPartyPayout = () => {
               orderDateRaw: orderDate,
               amount: totalAmount,
               orderStatus: order.order_status || order.status || order.delivery_status || '—',
-              paymentStatus:
-                order.payment_status === 'paid' || order.payment_status === 'completed'
-                  ? 'Paid'
-                  : 'Pending'
+              paymentStatus: paidSet.has(rowId) ? 'Paid' : (statusFromOrder ? 'Paid' : 'Pending')
             });
           }
         } catch (err) {
@@ -168,6 +186,35 @@ const ThirdPartyPayout = () => {
       setPayouts([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePay = async (payout) => {
+    if (markingPaid || payout.paymentStatus === 'Paid') return;
+    const rowData = {
+      key: payout.id,
+      entity_id: thirdPartyId,
+      orderId: payout.orderId,
+      amount: payout.amount
+    };
+    try {
+      setMarkingPaid(true);
+      await markAsPaid('third_party', rowData);
+      setPayouts((prev) =>
+        prev.map((p) => (p.id === payout.id ? { ...p, paymentStatus: 'Paid' } : p))
+      );
+      try {
+        const stored = localStorage.getItem('payout-thirdparty-paid');
+        const list = stored ? JSON.parse(stored) : [];
+        if (!list.includes(payout.id)) list.push(payout.id);
+        localStorage.setItem('payout-thirdparty-paid', JSON.stringify(list));
+      } catch {
+        // ignore
+      }
+    } catch (err) {
+      console.error('Error marking third party payout as paid:', err);
+    } finally {
+      setMarkingPaid(false);
     }
   };
 
@@ -333,7 +380,6 @@ const ThirdPartyPayout = () => {
                   <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Third Party Name</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Order Date</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Amount</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Status</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Payment Status</th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Action</th>
                 </tr>
@@ -341,13 +387,13 @@ const ThirdPartyPayout = () => {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
+                    <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
                       Loading payouts...
                     </td>
                   </tr>
                 ) : paginatedPayouts.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
+                    <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
                       No payout records found for this third party
                     </td>
                   </tr>
@@ -380,12 +426,6 @@ const ThirdPartyPayout = () => {
                         <div className="text-sm font-semibold text-[#0D5C4D]">{formatAmount(payout.amount)}</div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 w-fit bg-[#4ED39A] text-white">
-                          <div className="w-2 h-2 rounded-full bg-white" />
-                          {payout.orderStatus || '—'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
                         <span
                           className={`px-3 py-1.5 rounded-full text-xs font-medium ${
                             payout.paymentStatus === 'Paid'
@@ -400,15 +440,19 @@ const ThirdPartyPayout = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex gap-2">
-                          <button
-                            onClick={() => navigate(`/orders/${payout.orderId}`)}
-                            className="px-4 py-2 bg-[#0D8568] hover:bg-[#0a6354] text-white font-semibold rounded-lg text-xs transition-colors"
-                          >
-                            View
-                          </button>
-                          <button className="px-4 py-2 bg-[#047857] hover:bg-[#065F46] text-white font-semibold rounded-lg text-xs transition-colors">
-                            Invoice
-                          </button>
+                          {payout.paymentStatus === 'Paid' ? (
+                            <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-[#D4F4E8] text-[#047857]">
+                              Paid
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handlePay(payout)}
+                              disabled={markingPaid}
+                              className="px-4 py-2 bg-[#0D8568] hover:bg-[#0a6354] disabled:opacity-60 text-white font-semibold rounded-lg text-xs transition-colors"
+                            >
+                              {markingPaid ? 'Saving...' : 'Pay'}
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

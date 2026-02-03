@@ -7,6 +7,8 @@ import { getAllLabours } from '../../../api/labourApi';
 import { getAllLabourRates } from '../../../api/labourRateApi';
 import { getAllLabourExcessPay } from '../../../api/labourExcessPayApi';
 import { getAllAttendance } from '../../../api/labourAttendanceApi';
+import { getPaidRecords, markAsPaid } from '../../../api/payoutApi';
+import { getPaidRecords as getDailyPaidRecords, markAsPaid as markDailyAsPaid } from '../../../api/dailyPayoutsApi';
 import * as XLSX from 'xlsx-js-style';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -35,6 +37,7 @@ const LabourPayoutManagement = () => {
 
   const [loading, setLoading] = useState(true);
   const [payoutData, setPayoutData] = useState([]);
+  const [markingPaid, setMarkingPaid] = useState(false);
   const [paidKeys, setPaidKeys] = useState(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY_ALL);
@@ -60,11 +63,13 @@ const LabourPayoutManagement = () => {
     try {
       setLoading(true);
 
-      const [ordersRes, laboursRes, ratesRes, excessRes] = await Promise.all([
+      const [ordersRes, laboursRes, ratesRes, excessRes, paidRes, dailyPaidRes] = await Promise.all([
         getAllOrders().catch(() => ({ data: [] })),
         getAllLabours(1, 1000).catch(() => ({ data: [] })),
         getAllLabourRates().catch(() => []),
-        getAllLabourExcessPay().catch(() => ({ data: [] }))
+        getAllLabourExcessPay().catch(() => ({ data: [] })),
+        getPaidRecords('labour').catch(() => ({ data: [] })),
+        getDailyPaidRecords('labour').catch(() => ({ data: [] }))
       ]);
 
       const orders = Array.isArray(ordersRes) ? ordersRes : (ordersRes?.data || []);
@@ -139,6 +144,21 @@ const LabourPayoutManagement = () => {
 
       await Promise.all(assignmentPromises);
 
+      // Fetch daily-payouts paid records per labour (backend may only return when entity_id is set)
+      const dailyPaidByLabour = labours.length > 0
+        ? await Promise.all(
+            labours.map((l) =>
+              getDailyPaidRecords('labour', { entity_id: String(l.lid ?? l.id ?? '') }).catch(() => ({ data: [] }))
+            )
+          )
+        : [dailyPaidRes];
+
+      let dailyPaidMerged = dailyPaidRes?.data ?? dailyPaidRes?.paidRecords ?? dailyPaidRes?.records ?? (Array.isArray(dailyPaidRes) ? dailyPaidRes : []);
+      dailyPaidByLabour.forEach((res) => {
+        const list = res?.data ?? res?.paidRecords ?? res?.records ?? (Array.isArray(res) ? res : []);
+        dailyPaidMerged = dailyPaidMerged.concat(list);
+      });
+
       // Add rows for all dates where labours were present (so we show all dates, not only order dates)
       const end = new Date();
       const start = new Date(end);
@@ -171,6 +191,16 @@ const LabourPayoutManagement = () => {
 
       let paidSet = new Set();
       try {
+        const paidList = paidRes?.data ?? paidRes?.paidRecords ?? paidRes?.records ?? (Array.isArray(paidRes) ? paidRes : []);
+        paidList.forEach((item) => {
+          const k = item?.reference_key ?? item?.key ?? (item?.date && item?.entity_id ? `${item.date}_${item.entity_id}` : (typeof item === 'string' ? item : null));
+          if (k) paidSet.add(k);
+        });
+        const dailyPaidList = dailyPaidMerged;
+        dailyPaidList.forEach((item) => {
+          const k = item?.reference_key ?? item?.key ?? (item?.date && item?.entity_id ? `${item.date}_${item.entity_id}` : (typeof item === 'string' ? item : null));
+          if (k) paidSet.add(k);
+        });
         const stored = localStorage.getItem(STORAGE_KEY_ALL);
         if (stored) JSON.parse(stored).forEach((k) => paidSet.add(k));
       } catch {
@@ -212,20 +242,53 @@ const LabourPayoutManagement = () => {
     }
   };
 
-  const handlePay = (key) => {
-    setPaidKeys((prev) => new Set([...prev, key]));
-    setPayoutData((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'Paid' } : p)));
-    const [, lid] = key.split('_');
-    if (lid) {
+  const handlePay = async (payout) => {
+    const key = payout.key;
+    try {
+      setMarkingPaid(true);
+      const rowData = {
+        key: payout.key,
+        entity_id: payout.labourId,
+        date: payout.date,
+        labourId: payout.labourId,
+        labourName: payout.labourName,
+        workload: payout.workload,
+        dailyWage: payout.dailyWage,
+        excessPay: payout.excessPay,
+        totalPayout: payout.totalPayout,
+        amount: Number(payout.totalPayout) || 0,
+        status: 'Paid',
+        ...payout
+      };
+      await markAsPaid('labour', rowData);
+      await markDailyAsPaid('labour', rowData).catch(() => {});
+      setPaidKeys((prev) => new Set([...prev, key]));
+      setPayoutData((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'Paid' } : p)));
+      const [, lid] = key.split('_');
+      if (lid) {
+        try {
+          const sk = `labour-daily-paid-${lid}`;
+          const stored = localStorage.getItem(sk);
+          const set = new Set(stored ? JSON.parse(stored) : []);
+          set.add(key);
+          localStorage.setItem(sk, JSON.stringify([...set]));
+        } catch {
+          // ignore
+        }
+      }
       try {
-        const sk = `labour-daily-paid-${lid}`;
-        const stored = localStorage.getItem(sk);
-        const set = new Set(stored ? JSON.parse(stored) : []);
-        set.add(key);
-        localStorage.setItem(sk, JSON.stringify([...set]));
+        const stored = localStorage.getItem(STORAGE_KEY_ALL);
+        const list = stored ? JSON.parse(stored) : [];
+        if (!list.includes(key)) list.push(key);
+        localStorage.setItem(STORAGE_KEY_ALL, JSON.stringify(list));
       } catch {
         // ignore
       }
+    } catch (error) {
+      console.error('Error marking labour payout as paid:', error);
+      alert(error?.message || error?.error || 'Failed to mark as paid');
+    } finally {
+      setMarkingPaid(false);
     }
   };
 
@@ -592,10 +655,11 @@ const LabourPayoutManagement = () => {
                     <td className="px-6 py-4">
                       {payout.status === 'Pending' ? (
                         <button
-                          onClick={() => handlePay(payout.key)}
-                          className="px-4 py-2 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 transition-colors"
+                          onClick={() => payout.status === 'Pending' ? handlePay(payout) : undefined}
+                          disabled={markingPaid && payout.status === 'Pending'}
+                          className="px-4 py-2 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 transition-colors disabled:opacity-50"
                         >
-                          Pay
+                          {markingPaid ? 'Saving...' : 'Pay'}
                         </button>
                       ) : (
                         <span className="text-xs text-gray-500 font-medium">Paid</span>

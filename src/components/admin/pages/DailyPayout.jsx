@@ -9,6 +9,9 @@ import { getExcessKMsByDriverId, updateExcessKM, createExcessKM } from '../../..
 import { getAdvancePaysByDriverId } from '../../../api/advancePayApi';
 import { getAllDriverRates } from '../../../api/driverRateApi';
 import { getDriverAttendanceHistory, getAttendanceOverview } from '../../../api/driverAttendanceApi';
+import { getPaidRecords, markAsPaid } from '../../../api/dailyPayoutsApi';
+
+const getStorageKey = (driverId) => (driverId ? `driver-daily-paid-${driverId}` : 'driver-daily-paid');
 
 const DailyPayout = () => {
   const navigate = useNavigate();
@@ -20,14 +23,8 @@ const DailyPayout = () => {
   const [payoutData, setPayoutData] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 7;
-  const [paidDates, setPaidDates] = useState(() => {
-    try {
-      const stored = localStorage.getItem(`driver-daily-paid-${driverId}`);
-      return stored ? new Set(JSON.parse(stored)) : new Set();
-    } catch {
-      return new Set();
-    }
-  });
+  const [paidDates, setPaidDates] = useState(new Set());
+  const [markingPaid, setMarkingPaid] = useState(false);
   const [editExcessModal, setEditExcessModal] = useState({
     open: false,
     date: null,
@@ -41,15 +38,6 @@ const DailyPayout = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch depends on driverId only
   }, [driverId]);
 
-  useEffect(() => {
-    if (!driverId) return;
-    try {
-      localStorage.setItem(`driver-daily-paid-${driverId}`, JSON.stringify([...paidDates]));
-    } catch {
-      // ignore localStorage errors
-    }
-  }, [driverId, paidDates]);
-
   const fetchDailyPayouts = async () => {
     if (!driverId) {
       setLoading(false);
@@ -58,7 +46,7 @@ const DailyPayout = () => {
     try {
       setLoading(true);
 
-      const [driverRes, ordersRes, fuelRes, excessRes, advanceRes, driversRes, driverRatesRes, attendanceRes] = await Promise.all([
+      const [driverRes, ordersRes, fuelRes, excessRes, advanceRes, driversRes, driverRatesRes, attendanceRes, paidRes] = await Promise.all([
         getDriverById(driverId).catch(() => null),
         getAllOrders().catch(() => ({ data: [] })),
         getFuelExpensesByDriverId(driverId).catch(() => ({ data: [] })),
@@ -66,7 +54,8 @@ const DailyPayout = () => {
         getAdvancePaysByDriverId(driverId).catch(() => ({ data: [] })),
         getAllDrivers().catch(() => ({ data: [] })),
         getAllDriverRates().catch(() => ({ data: [], success: false })),
-        getDriverAttendanceHistory(driverId, {}).catch(() => null)
+        getDriverAttendanceHistory(driverId, {}).catch(() => null),
+        getPaidRecords('driver', { entity_id: driverId }).catch(() => ({ data: [] }))
       ]);
 
       const driverData = driverRes?.data ?? driverRes;
@@ -371,10 +360,25 @@ const DailyPayout = () => {
 
       let paidSet = new Set();
       try {
-        const stored = localStorage.getItem(`driver-daily-paid-${driverId}`);
-        if (stored) JSON.parse(stored).forEach((d) => paidSet.add(d));
+        const paidList = paidRes?.data ?? paidRes?.paidDates ?? paidRes?.records ?? (Array.isArray(paidRes) ? paidRes : []);
+        paidList.forEach((item) => {
+          const refKey = item?.reference_key ?? item?.key;
+          const date = typeof item === 'string' ? item : (refKey ? (refKey.includes('_') ? refKey.split('_')[0] : refKey) : (item?.date ?? item?.reference_date ?? item?.payout_date));
+          if (date) paidSet.add(date);
+        });
+        // Fallback: merge with localStorage so paid status persists if backend doesn't return records
+        const storageKey = getStorageKey(driverId);
+        const stored = localStorage.getItem(storageKey);
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            (Array.isArray(parsed) ? parsed : []).forEach((d) => paidSet.add(d));
+          } catch {
+            // ignore
+          }
+        }
       } catch {
-        // ignore localStorage parse errors
+        // ignore
       }
 
       let rows = Array.from(allDates)
@@ -475,6 +479,7 @@ const DailyPayout = () => {
       }
 
       setPayoutData(rows);
+      setPaidDates(paidSet);
       setCurrentPage(1);
     } catch (error) {
       console.error('Error fetching daily payouts:', error);
@@ -484,11 +489,63 @@ const DailyPayout = () => {
     }
   };
 
-  const handlePay = (date) => {
-    setPaidDates((prev) => new Set([...prev, date]));
-    setPayoutData((prev) =>
-      prev.map((p) => (p.date === date ? { ...p, status: 'Paid' } : p))
-    );
+  const handlePay = async (payout) => {
+    const date = payout.date;
+    try {
+      setMarkingPaid(true);
+      const rowData = {
+        key: payout.date,
+        entity_id: driverId,
+        date: payout.date,
+        basePay: payout.basePay,
+        fuelExpenses: payout.fuelExpenses,
+        startKM: payout.startKM,
+        endKM: payout.endKM,
+        excessKM: payout.excessKM,
+        unitPrice: payout.unitPrice,
+        excessKMPrice: payout.excessKMPrice,
+        excessKMRecordId: payout.excessKMRecordId,
+        advancePay: payout.advancePay,
+        totalPayout: payout.totalPayout,
+        amount: Number(payout.totalPayout) || 0, // for DB amount column
+        status: 'Paid',
+        ...payout
+      };
+      await markAsPaid('driver', rowData);
+      setPaidDates((prev) => new Set([...prev, date]));
+      setPayoutData((prev) =>
+        prev.map((p) => (p.date === date ? { ...p, status: 'Paid' } : p))
+      );
+      // Persist to localStorage so status survives refresh (in case backend doesn't return paid records)
+      try {
+        const storageKey = getStorageKey(driverId);
+        const stored = localStorage.getItem(storageKey);
+        const list = stored ? JSON.parse(stored) : [];
+        if (!list.includes(date)) list.push(date);
+        localStorage.setItem(storageKey, JSON.stringify(list));
+      } catch {
+        // ignore
+      }
+    } catch (error) {
+      console.error('Error marking payout as paid:', error);
+      // Still persist locally so status survives refresh even if backend fails
+      setPaidDates((prev) => new Set([...prev, date]));
+      setPayoutData((prev) =>
+        prev.map((p) => (p.date === date ? { ...p, status: 'Paid' } : p))
+      );
+      try {
+        const storageKey = getStorageKey(driverId);
+        const stored = localStorage.getItem(storageKey);
+        const list = stored ? JSON.parse(stored) : [];
+        if (!list.includes(date)) list.push(date);
+        localStorage.setItem(storageKey, JSON.stringify(list));
+      } catch {
+        // ignore
+      }
+      alert(error?.message || error?.error || 'Could not save to server. Status saved locally and will persist after refresh.');
+    } finally {
+      setMarkingPaid(false);
+    }
   };
 
   const openEditExcessPrice = (payout) => {
@@ -686,10 +743,11 @@ const DailyPayout = () => {
                       <td className="px-6 py-4">
                         {payout.status === 'Pending' ? (
                           <button
-                            onClick={() => handlePay(payout.date)}
-                            className="px-4 py-2 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 transition-colors"
+                            onClick={() => handlePay(payout)}
+                            disabled={markingPaid}
+                            className="px-4 py-2 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 transition-colors disabled:opacity-50"
                           >
-                            Pay
+                            {markingPaid ? 'Saving...' : 'Pay'}
                           </button>
                         ) : (
                           <span className="text-xs text-gray-500 font-medium">Paid</span>

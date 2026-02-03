@@ -4,6 +4,7 @@ import { Search, Filter, Download } from 'lucide-react';
 import { getAllOrders } from '../../../api/orderApi';
 import { getOrderAssignment } from '../../../api/orderAssignmentApi';
 import { getAllSuppliers } from '../../../api/supplierApi';
+import { getPaidRecords, markAsPaid } from '../../../api/payoutApi';
 
 const PayoutSupplier = () => {
   const navigate = useNavigate();
@@ -13,6 +14,7 @@ const PayoutSupplier = () => {
 
   const [loading, setLoading] = useState(true);
   const [payouts, setPayouts] = useState([]);
+  const [markingPaid, setMarkingPaid] = useState(false);
 
   const formatCurrency = (amount) =>
     `₹${(Number.isFinite(amount) ? amount : 0).toLocaleString('en-IN', {
@@ -29,13 +31,29 @@ const PayoutSupplier = () => {
   const fetchSupplierPayouts = async () => {
     try {
       setLoading(true);
-      const [ordersRes, suppliersRes] = await Promise.all([
+      const [ordersRes, suppliersRes, paidRes] = await Promise.all([
         getAllOrders(),
         getAllSuppliers(),
+        getPaidRecords('supplier').catch(() => ({ data: [] })),
       ]);
 
       const orders = ordersRes?.data || [];
       const suppliers = suppliersRes?.data || [];
+      const paidList = paidRes?.data ?? paidRes?.paidRecords ?? paidRes?.records ?? (Array.isArray(paidRes) ? paidRes : []);
+      const paidSet = new Set();
+      paidList.forEach((item) => {
+        const k = item?.reference_key ?? item?.key ?? item?.id ?? (item?.orderId != null && item?.entity_id != null ? `${item.orderId}_${item.entity_id}` : (typeof item === 'string' ? item : null));
+        if (k) paidSet.add(k);
+      });
+      try {
+        const stored = localStorage.getItem('payout-supplier-paid');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          (Array.isArray(parsed) ? parsed : []).forEach((k) => paidSet.add(k));
+        }
+      } catch {
+        // ignore
+      }
 
       const supplierMap = new Map(suppliers.map((s) => [String(s.sid), s]));
 
@@ -134,18 +152,18 @@ const PayoutSupplier = () => {
 
           if (totalAmount > 0) {
             const supplier = supplierMap.get(group.supplierId);
+            const rowId = `${order.oid}_${group.supplierId}`;
+            const statusFromOrder = order.payment_status === 'paid' || order.payment_status === 'completed';
             processed.push({
-              id: `${order.oid}_${group.supplierId}`,
+              id: rowId,
+              orderId: order.oid,
+              entity_id: group.supplierId,
               supplierName: supplier?.supplier_name || 'Unknown Supplier',
               supplierCode: supplier?.supplier_id || `SID-${group.supplierId}`,
               lastSupplied: order.order_received_date || order.createdAt,
               quantityKg: totalQty,
               amount: totalAmount,
-              status:
-                order.payment_status === 'paid' ||
-                order.payment_status === 'completed'
-                  ? 'Paid'
-                  : 'Pending',
+              status: paidSet.has(rowId) ? 'Paid' : (statusFromOrder ? 'Paid' : 'Pending'),
             });
           }
         });
@@ -213,6 +231,41 @@ const PayoutSupplier = () => {
     status === 'Paid'
       ? 'bg-gray-200 hover:bg-gray-300 text-gray-700'
       : 'bg-emerald-600 hover:bg-emerald-700 text-white';
+
+  const handlePay = async (payout) => {
+    if (payout.status === 'Paid') return;
+    try {
+      setMarkingPaid(true);
+      const rowData = {
+        key: payout.id,
+        id: payout.id,
+        entity_id: payout.entity_id ?? payout.id.split('_')[1],
+        orderId: payout.orderId ?? payout.id.split('_')[0],
+        amount: Number(payout.amount) || 0,
+        supplierName: payout.supplierName,
+        supplierCode: payout.supplierCode,
+        quantityKg: payout.quantityKg,
+        lastSupplied: payout.lastSupplied,
+        status: 'Paid',
+        ...payout
+      };
+      await markAsPaid('supplier', rowData);
+      setPayouts((prev) => prev.map((p) => (p.id === payout.id ? { ...p, status: 'Paid' } : p)));
+      try {
+        const stored = localStorage.getItem('payout-supplier-paid');
+        const list = stored ? JSON.parse(stored) : [];
+        if (!list.includes(payout.id)) list.push(payout.id);
+        localStorage.setItem('payout-supplier-paid', JSON.stringify(list));
+      } catch {
+        // ignore
+      }
+    } catch (error) {
+      console.error('Error marking supplier payout as paid:', error);
+      alert(error?.message || error?.error || 'Failed to mark as paid');
+    } finally {
+      setMarkingPaid(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 p-4 sm:p-6 lg:p-8">
@@ -387,11 +440,13 @@ const PayoutSupplier = () => {
                       </td>
                       <td className="px-6 py-4">
                         <button
+                          onClick={() => payout.status === 'Pending' ? handlePay(payout) : undefined}
+                          disabled={markingPaid && payout.status === 'Pending'}
                           className={`px-6 py-2 rounded-lg text-xs font-semibold transition-colors ${getActionButton(
                             payout.status
-                          )}`}
+                          )} ${payout.status === 'Pending' ? 'cursor-pointer' : 'cursor-default'}`}
                         >
-                          {payout.status === 'Paid' ? 'View' : 'Pay'}
+                          {payout.status === 'Paid' ? 'View' : markingPaid ? 'Saving...' : 'Pay'}
                         </button>
                       </td>
                     </tr>

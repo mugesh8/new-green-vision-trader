@@ -961,6 +961,21 @@ const NewOrder = () => {
     setIsSubmitting(true);
 
     try {
+      // Calculate totals to send in order payload
+      const totalNetWeight = products
+        .reduce((sum, p) => sum + (parseFloat(p.netWeight) || 0), 0)
+        .toFixed(2);
+
+      const totalNumBoxes = products
+        .reduce((sum, p) => sum + (parseFloat(p.numBoxes) || 0), 0)
+        .toFixed(2);
+
+      const totalGrossWeight = products
+        .reduce((sum, p) => sum + (parseFloat(p.grossWeight) || 0), 0)
+        .toFixed(2);
+
+      const isBoxOrFlowerOrder = formData.orderType === 'flight' || formData.orderType === 'flower';
+
       const orderData = {
         customerName: formData.customerName,
         customerId: formData.customerId || undefined,
@@ -969,6 +984,10 @@ const NewOrder = () => {
         packingDay: formData.packingDay || undefined,
         orderType: getOrderTypeForAPI(formData.orderType),
         detailsComment: formData.detailsComment || undefined,
+        // Totals for entire order (used by backend orders table)
+        totalNetWeight,
+        totalNumBoxes: isBoxOrFlowerOrder ? totalNumBoxes : undefined,
+        totalGrossWeight: isBoxOrFlowerOrder ? totalGrossWeight : undefined,
         products: products.map(product => {
           let numBoxesValue = product.numBoxes;
 

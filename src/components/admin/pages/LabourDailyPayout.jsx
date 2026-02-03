@@ -7,6 +7,7 @@ import { getAllLabours } from '../../../api/labourApi';
 import { getAllLabourRates } from '../../../api/labourRateApi';
 import { getAllLabourExcessPay } from '../../../api/labourExcessPayApi';
 import { getAllAttendance, getAttendanceByLabourId } from '../../../api/labourAttendanceApi';
+import { getPaidRecords, markAsPaid } from '../../../api/dailyPayoutsApi';
 
 const ITEMS_PER_PAGE = 7;
 
@@ -30,52 +31,29 @@ const LabourDailyPayout = () => {
   const [labourName, setLabourName] = useState('');
   const [payoutData, setPayoutData] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [paidKeys, setPaidKeys] = useState(() => {
-    try {
-      const key = getStorageKey(labourId);
-      const stored = localStorage.getItem(key);
-      return stored ? new Set(JSON.parse(stored)) : new Set();
-    } catch {
-      return new Set();
-    }
-  });
+  const [, setPaidKeys] = useState(new Set());
+  const [markingPaid, setMarkingPaid] = useState(false);
 
   useEffect(() => {
     if (!labourId) {
       navigate('/labour', { replace: true });
       return;
     }
-    try {
-      const key = getStorageKey(labourId);
-      const stored = localStorage.getItem(key);
-      setPaidKeys(stored ? new Set(JSON.parse(stored)) : new Set());
-    } catch {
-      setPaidKeys(new Set());
-    }
     fetchLabourDailyPayouts();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch when labourId is set
   }, [labourId]);
-
-  useEffect(() => {
-    if (!labourId) return;
-    try {
-      const key = getStorageKey(labourId);
-      localStorage.setItem(key, JSON.stringify([...paidKeys]));
-    } catch {
-      // ignore
-    }
-  }, [labourId, paidKeys]);
 
   const fetchLabourDailyPayouts = async () => {
     try {
       setLoading(true);
 
-      const [ordersRes, laboursRes, ratesRes, excessRes, attendanceForLabourRes] = await Promise.all([
+      const [ordersRes, laboursRes, ratesRes, excessRes, attendanceForLabourRes, paidRes] = await Promise.all([
         getAllOrders().catch(() => ({ data: [] })),
         getAllLabours(1, 1000).catch(() => ({ data: [] })),
         getAllLabourRates().catch(() => []),
         getAllLabourExcessPay().catch(() => ({ data: [] })),
-        labourId ? getAttendanceByLabourId(labourId).catch(() => null) : Promise.resolve(null)
+        labourId ? getAttendanceByLabourId(labourId).catch(() => null) : Promise.resolve(null),
+        labourId ? getPaidRecords('labour', { entity_id: labourId }).catch(() => ({ data: [] })) : Promise.resolve({ data: [] })
       ]);
 
       const orders = Array.isArray(ordersRes) ? ordersRes : (ordersRes?.data || []);
@@ -180,9 +158,22 @@ const LabourDailyPayout = () => {
 
       let paidSet = new Set();
       try {
+        const paidList = paidRes?.data ?? paidRes?.paidRecords ?? paidRes?.records ?? (Array.isArray(paidRes) ? paidRes : []);
+        paidList.forEach((item) => {
+          const key = item?.reference_key ?? item?.key ?? (item?.date && (item?.entity_id ?? labourId) ? `${item.date}_${item.entity_id ?? labourId}` : (typeof item === 'string' ? item : null));
+          if (key) paidSet.add(key);
+        });
+        // Fallback: merge with localStorage so paid status persists if backend doesn't return records
         const storageKey = getStorageKey(labourId);
         const stored = localStorage.getItem(storageKey);
-        if (stored) JSON.parse(stored).forEach((k) => paidSet.add(k));
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            (Array.isArray(parsed) ? parsed : []).forEach((k) => paidSet.add(k));
+          } catch {
+            // ignore
+          }
+        }
       } catch {
         // ignore
       }
@@ -256,6 +247,7 @@ const LabourDailyPayout = () => {
       }
 
       setPayoutData(rows);
+      setPaidKeys(paidSet);
       setCurrentPage(1);
     } catch (error) {
       console.error('Error fetching labour daily payouts:', error);
@@ -265,9 +257,55 @@ const LabourDailyPayout = () => {
     }
   };
 
-  const handlePay = (key) => {
-    setPaidKeys((prev) => new Set([...prev, key]));
-    setPayoutData((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'Paid' } : p)));
+  const handlePay = async (payout) => {
+    const key = payout.key;
+    try {
+      setMarkingPaid(true);
+      const rowData = {
+        entity_id: labourId,
+        key: payout.key,
+        date: payout.date,
+        labourId: payout.labourId,
+        labourName: payout.labourName,
+        workload: payout.workload,
+        dailyWage: payout.dailyWage,
+        excessPay: payout.excessPay,
+        totalPayout: payout.totalPayout,
+        amount: Number(payout.totalPayout) || 0, // for DB amount column
+        status: 'Paid',
+        ...payout
+      };
+      await markAsPaid('labour', rowData);
+      setPaidKeys((prev) => new Set([...prev, key]));
+      setPayoutData((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'Paid' } : p)));
+      // Persist to localStorage so status survives refresh (in case backend doesn't return paid records)
+      try {
+        const storageKey = getStorageKey(labourId);
+        const stored = localStorage.getItem(storageKey);
+        const list = stored ? JSON.parse(stored) : [];
+        if (!list.includes(key)) list.push(key);
+        localStorage.setItem(storageKey, JSON.stringify(list));
+      } catch {
+        // ignore
+      }
+    } catch (error) {
+      console.error('Error marking labour payout as paid:', error);
+      // Still persist locally so status survives refresh even if backend fails
+      setPaidKeys((prev) => new Set([...prev, key]));
+      setPayoutData((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'Paid' } : p)));
+      try {
+        const storageKey = getStorageKey(labourId);
+        const stored = localStorage.getItem(storageKey);
+        const list = stored ? JSON.parse(stored) : [];
+        if (!list.includes(key)) list.push(key);
+        localStorage.setItem(storageKey, JSON.stringify(list));
+      } catch {
+        // ignore
+      }
+      alert(error?.message || error?.error || 'Could not save to server. Status saved locally and will persist after refresh.');
+    } finally {
+      setMarkingPaid(false);
+    }
   };
 
   const getStatusColor = (status) => {
@@ -381,10 +419,11 @@ const LabourDailyPayout = () => {
                       <td className="px-6 py-4">
                         {payout.status === 'Pending' ? (
                           <button
-                            onClick={() => handlePay(payout.key)}
-                            className="px-4 py-2 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 transition-colors"
+                            onClick={() => handlePay(payout)}
+                            disabled={markingPaid}
+                            className="px-4 py-2 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700 transition-colors disabled:opacity-50"
                           >
-                            Pay
+                            {markingPaid ? 'Saving...' : 'Pay'}
                           </button>
                         ) : (
                           <span className="text-xs text-gray-500 font-medium">Paid</span>

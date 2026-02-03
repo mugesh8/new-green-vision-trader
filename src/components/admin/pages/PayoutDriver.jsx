@@ -9,6 +9,8 @@ import { getAllFuelExpenses } from '../../../api/fuelExpenseApi';
 import { getAllExcessKMs } from '../../../api/excessKmApi';
 import { getAllAdvancePays } from '../../../api/advancePayApi';
 import { getAttendanceOverview } from '../../../api/driverAttendanceApi';
+import { getPaidRecords, markAsPaid } from '../../../api/payoutApi';
+import { getPaidRecords as getDailyPaidRecords, markAsPaid as markDailyAsPaid } from '../../../api/dailyPayoutsApi';
 import * as XLSX from 'xlsx-js-style';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
@@ -37,6 +39,7 @@ const DriverPayoutManagement = () => {
 
   const [loading, setLoading] = useState(true);
   const [payouts, setPayouts] = useState([]);
+  const [markingPaid, setMarkingPaid] = useState(false);
   const [paidKeys, setPaidKeys] = useState(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY_ALL);
@@ -67,13 +70,15 @@ const DriverPayoutManagement = () => {
     try {
       setLoading(true);
 
-      const [ordersRes, driversRes, driverRatesRes, fuelExpensesRes, excessKMsRes, advancePaysRes] = await Promise.all([
+      const [ordersRes, driversRes, driverRatesRes, fuelExpensesRes, excessKMsRes, advancePaysRes, paidRes, dailyPaidRes] = await Promise.all([
         getAllOrders().catch(() => ({ data: [], success: false })),
         getAllDrivers().catch(() => ({ data: [], success: false })),
         getAllDriverRates().catch(() => ({ data: [], success: false })),
         getAllFuelExpenses().catch(() => ({ data: [], success: false })),
         getAllExcessKMs().catch(() => ({ data: [], success: false })),
-        getAllAdvancePays().catch(() => ({ data: [], success: false }))
+        getAllAdvancePays().catch(() => ({ data: [], success: false })),
+        getPaidRecords('driver').catch(() => ({ data: [] })),
+        getDailyPaidRecords('driver').catch(() => ({ data: [] }))
       ]);
 
       const orders = ordersRes?.data || ordersRes || [];
@@ -449,8 +454,44 @@ const DriverPayoutManagement = () => {
 
       await Promise.all(assignmentPromises);
 
+      // Fetch daily-payouts paid records per driver (backend may only return when entity_id is set)
+      const dailyPaidByDriver = drivers.length > 0
+        ? await Promise.all(
+            drivers.map((d) =>
+              getDailyPaidRecords('driver', { entity_id: String(d.did ?? d.id ?? '') }).catch(() => ({ data: [] }))
+            )
+          )
+        : [dailyPaidRes];
+
+      let dailyPaidMerged = dailyPaidRes?.data ?? dailyPaidRes?.paidRecords ?? dailyPaidRes?.records ?? (Array.isArray(dailyPaidRes) ? dailyPaidRes : []);
+      dailyPaidByDriver.forEach((res) => {
+        const list = res?.data ?? res?.paidRecords ?? res?.records ?? (Array.isArray(res) ? res : []);
+        dailyPaidMerged = dailyPaidMerged.concat(list);
+      });
+
+      const toDriverPaidKey = (item) => {
+        const refKey = item?.reference_key ?? item?.key ?? (typeof item === 'string' ? item : null);
+        const datePart = item?.date ?? item?.reference_date ?? refKey;
+        const entityId = item?.entity_id;
+        if (refKey && refKey.includes('_')) return refKey;
+        if (datePart && entityId != null && entityId !== '') return `${datePart}_${entityId}`;
+        if (refKey) return refKey;
+        if (datePart && entityId != null) return `${datePart}_${entityId}`;
+        return null;
+      };
+
       let paidSet = new Set();
       try {
+        const paidList = paidRes?.data ?? paidRes?.paidRecords ?? paidRes?.records ?? (Array.isArray(paidRes) ? paidRes : []);
+        paidList.forEach((item) => {
+          const k = toDriverPaidKey(item);
+          if (k) paidSet.add(k);
+        });
+        const dailyPaidList = dailyPaidMerged;
+        dailyPaidList.forEach((item) => {
+          const k = toDriverPaidKey(item);
+          if (k) paidSet.add(k);
+        });
         const stored = localStorage.getItem(STORAGE_KEY_ALL);
         if (stored) JSON.parse(stored).forEach((k) => paidSet.add(k));
       } catch {
@@ -636,21 +677,56 @@ const DriverPayoutManagement = () => {
     }
   };
 
-  const handlePay = (key) => {
-    setPaidKeys((prev) => new Set([...prev, key]));
-    setPayouts((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'Paid' } : p)));
-    const idx = key.indexOf('_');
-    const driverId = key.substring(idx + 1);
-    if (driverId) {
+  const handlePay = async (payout) => {
+    const key = payout.key;
+    try {
+      setMarkingPaid(true);
+      const rowData = {
+        key: payout.key,
+        entity_id: payout.driverId,
+        date: payout.date,
+        driverId: payout.driverId,
+        driverName: payout.driverName,
+        driverCode: payout.driverCode,
+        basePay: payout.basePay,
+        fuelExpenses: payout.fuelExpenses,
+        advancePay: payout.advancePay,
+        excessKMPrice: payout.excessKMPrice,
+        totalPayout: payout.totalPayout,
+        amount: Number(payout.totalPayout) || 0,
+        status: 'Paid',
+        ...payout
+      };
+      await markAsPaid('driver', rowData);
+      await markDailyAsPaid('driver', rowData).catch(() => {});
+      setPaidKeys((prev) => new Set([...prev, key]));
+      setPayouts((prev) => prev.map((p) => (p.key === key ? { ...p, status: 'Paid' } : p)));
+      const idx = key.indexOf('_');
+      const driverId = key.substring(idx + 1);
+      if (driverId) {
+        try {
+          const sk = `driver-daily-paid-${driverId}`;
+          const stored = localStorage.getItem(sk);
+          const set = new Set(stored ? JSON.parse(stored) : []);
+          set.add(key);
+          localStorage.setItem(sk, JSON.stringify([...set]));
+        } catch {
+          // ignore
+        }
+      }
       try {
-        const sk = `driver-daily-paid-${driverId}`;
-        const stored = localStorage.getItem(sk);
-        const set = new Set(stored ? JSON.parse(stored) : []);
-        set.add(key);
-        localStorage.setItem(sk, JSON.stringify([...set]));
+        const stored = localStorage.getItem(STORAGE_KEY_ALL);
+        const list = stored ? JSON.parse(stored) : [];
+        if (!list.includes(key)) list.push(key);
+        localStorage.setItem(STORAGE_KEY_ALL, JSON.stringify(list));
       } catch {
         // ignore
       }
+    } catch (error) {
+      console.error('Error marking driver payout as paid:', error);
+      alert(error?.message || error?.error || 'Failed to mark as paid');
+    } finally {
+      setMarkingPaid(false);
     }
   };
 
@@ -997,10 +1073,11 @@ const DriverPayoutManagement = () => {
                         {payout.status === 'Pending' ? (
                           <button
                             type="button"
-                            onClick={() => handlePay(payout.key)}
-                            className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-emerald-600 hover:bg-emerald-700 text-white"
+                            onClick={() => handlePay(payout)}
+                            disabled={markingPaid}
+                            className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
                           >
-                            Pay
+                            {markingPaid ? 'Saving...' : 'Pay'}
                           </button>
                         ) : (
                           <span className="px-4 py-1.5 rounded-lg text-xs font-medium bg-gray-200 text-gray-700">

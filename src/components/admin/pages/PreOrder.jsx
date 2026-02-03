@@ -505,6 +505,9 @@ const PreOrder = () => {
   const hasAssignedDrivers = deliveryRoutes.some(route => route.driver);
   const groupedDriverAssignments = getGroupedDriverAssignments();
 
+  // Pre-order status display (align with OrderAssignCreateStage1)
+  const preOrderStatus = orderDetails?.preorder_status || orderDetails?.order_status || null;
+
   return (
     <div className="min-h-screen bg-gray-50 p-4 sm:p-6 lg:p-8">
 
@@ -521,26 +524,33 @@ const PreOrder = () => {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Order ID</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Customer Name</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Phone Number</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Delivery Address</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Total Products</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Status</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.oid || id}</td>
+                <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.order_id || orderDetails?.order_auto_id || orderDetails?.oid || id}</td>
                 <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.customer_name || 'N/A'}</td>
-                <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.phone_number || 'N/A'}</td>
-                <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.delivery_address || 'N/A'}</td>
                 <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.items?.length || 0} Items</td>
                 <td className="px-4 py-3">
-                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${orderDetails?.order_status === 'pending' ? 'bg-purple-100 text-purple-700' :
-                    orderDetails?.order_status === 'processing' ? 'bg-yellow-100 text-yellow-700' :
-                      orderDetails?.order_status === 'delivered' ? 'bg-emerald-600 text-white' :
-                        'bg-gray-100 text-gray-700'
-                    }`}>
-                    {orderDetails?.order_status ? orderDetails.order_status.charAt(0).toUpperCase() + orderDetails.order_status.slice(1) : 'N/A'}
+                  <span
+                    className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
+                      preOrderStatus === 'pending'
+                        ? 'bg-purple-100 text-purple-700'
+                        : preOrderStatus === 'processing'
+                        ? 'bg-yellow-100 text-yellow-700'
+                        : preOrderStatus === 'completed'
+                        ? 'bg-emerald-600 text-white'
+                        : preOrderStatus === 'in_progress'
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'bg-gray-100 text-gray-700'
+                    }`}
+                  >
+                    {preOrderStatus
+                      ? preOrderStatus.charAt(0).toUpperCase() +
+                        preOrderStatus.slice(1).replace('_', ' ')
+                      : 'N/A'}
                   </span>
                 </td>
               </tr>
@@ -554,18 +564,9 @@ const PreOrder = () => {
       {/* Stage 1 Section */}
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-2">
-          <h2 className="text-lg font-semibold text-gray-900">Stage 1: Product Collection from Sources(Box/Bag)</h2>
-          <div className="relative">
-            <select
-              value={selectedType}
-              onChange={(e) => setSelectedType(e.target.value)}
-              className="appearance-none px-4 py-2 pr-10 bg-white border-2 border-emerald-600 text-emerald-700 rounded-lg font-medium cursor-pointer hover:bg-emerald-50 transition-colors outline-none"
-            >
-              <option value="Box">Box</option>
-              <option value="Bag">Bag</option>
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-emerald-700 pointer-events-none" />
-          </div>
+          <h2 className="text-lg font-semibold text-gray-900">
+            Stage 1: Product Collection from Sources
+          </h2>
         </div>
         <p className="text-sm text-gray-600 mb-6">Assign order products to farmers, suppliers, and third parties for collection and delivery to packaging location</p>
 
@@ -576,9 +577,9 @@ const PreOrder = () => {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Product</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Quantity Needed</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Market Price (₹/kg)</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Entity Type <span className="text-red-500">*</span></th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Name <span className="text-red-500">*</span></th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Place</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Entity Stock</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Picked Qty <span className="text-red-500">*</span></th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Price (₹) <span className="text-red-500">*</span></th>
@@ -603,9 +604,6 @@ const PreOrder = () => {
                     </td>
                     <td className="px-4 py-4">
                       <span className="text-sm text-gray-900">{row.quantity}</span>
-                    </td>
-                    <td className="px-4 py-4">
-                      <span className="text-sm text-gray-900">₹{row.marketPrice || 0}/kg</span>
                     </td>
                     <td className="px-4 py-4">
                       <select
@@ -701,6 +699,29 @@ const PreOrder = () => {
                         {row.entityType === 'thirdParty' && assignmentOptions.thirdParties.map(thirdParty => (
                           <option key={`thirdParty-${thirdParty.tpid}`} value={thirdParty.third_party_name}>{thirdParty.third_party_name}</option>
                         ))}
+                      </select>
+                    </td>
+                    <td className="px-4 py-4">
+                      <select
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                        value={row.place || ''}
+                        onChange={(e) => {
+                          const newPlace = e.target.value;
+                          if (row.isRemaining) {
+                            setRemainingRowAssignments(prev => ({
+                              ...prev,
+                              [row.id]: { ...prev[row.id], place: newPlace }
+                            }));
+                          } else {
+                            const updatedRows = [...productRows];
+                            updatedRows[row.displayIndex].place = newPlace;
+                            setProductRows(updatedRows);
+                          }
+                        }}
+                      >
+                        <option value="">Select place...</option>
+                        <option value="Farmer place">Farmer place</option>
+                        <option value="Own place">Own place</option>
                       </select>
                     </td>
                     <td className="px-4 py-4">
@@ -816,7 +837,6 @@ const PreOrder = () => {
                     )}
                     <p className="text-sm text-gray-600">{row.quantity}</p>
                   </div>
-                  <span className="text-sm font-medium text-emerald-600">₹{row.marketPrice || 0}/kg</span>
                 </div>
 
                 <div className="space-y-3">
@@ -854,6 +874,33 @@ const PreOrder = () => {
                       <option value="farmer">Farmer</option>
                       <option value="supplier">Supplier</option>
                       <option value="thirdParty">Third Party</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      Place
+                    </label>
+                    <select
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                      value={row.place || ''}
+                      onChange={(e) => {
+                        const newPlace = e.target.value;
+                        if (row.isRemaining) {
+                          setRemainingRowAssignments(prev => ({
+                            ...prev,
+                            [row.id]: { ...prev[row.id], place: newPlace }
+                          }));
+                        } else {
+                          const updatedRows = [...productRows];
+                          updatedRows[row.displayIndex].place = newPlace;
+                          setProductRows(updatedRows);
+                        }
+                      }}
+                    >
+                      <option value="">Select place...</option>
+                      <option value="Farmer place">Farmer place</option>
+                      <option value="Own place">Own place</option>
                     </select>
                   </div>
 
