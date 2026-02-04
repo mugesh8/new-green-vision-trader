@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Bell, ChevronDown, Menu, User, LogOut, CheckCircle, AlertCircle, AlertTriangle, Package, Clock } from 'lucide-react';
+import { Bell, ChevronDown, Menu, LogOut, CheckCircle, AlertCircle, AlertTriangle, Package, Clock } from 'lucide-react';
 import { getNotifications, markNotificationAsRead } from '../../api/notificationApi';
 
 const Navbar = ({ onMenuClick }) => {
@@ -425,16 +425,12 @@ const Navbar = ({ onMenuClick }) => {
             {/* Profile Dropdown */}
             {showProfile && (
               <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                <button className="w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center gap-3 text-gray-700">
-                  <User className="w-4 h-4" />
-                  <span className="text-sm">Profile</span>
-                </button>
                 <button 
                   onClick={() => {
                     setShowLogoutModal(true);
                     setShowProfile(false);
                   }}
-                  className="w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center gap-3 text-red-600 border-t border-gray-100"
+                  className="w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center gap-3 text-red-600"
                 >
                   <LogOut className="w-4 h-4" />
                   <span className="text-sm">Logout</span>
