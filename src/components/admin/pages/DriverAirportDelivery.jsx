@@ -404,6 +404,12 @@ const DriverAirportDeliveryPage = () => {
             Driver Details
           </button>
           <button
+            onClick={() => navigate('/start-end-km-management', { state: { driverId: id } })}
+            className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm whitespace-nowrap bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+          >
+            Start KM/End KM
+          </button>
+          <button
             onClick={() => navigate(`/drivers/${id}/local-pickups`)}
             className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm whitespace-nowrap bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
           >
@@ -415,7 +421,7 @@ const DriverAirportDeliveryPage = () => {
             BOX ORDER
           </button>
           <button
-            onClick={() => navigate('/fuel-expense-management')}
+            onClick={() => navigate('/fuel-expense-management', { state: { driverId: id } })}
             className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm bg-white text-gray-600 hover:bg-gray-50 border border-gray-200 whitespace-nowrap"
           >
             Fuel Expenses
