@@ -1047,10 +1047,15 @@ const LocalOrderAssign = () => {
       // Generate summary data (same as what's displayed in the UI)
       const groupedDriverAssignments = getGroupedDriverAssignments();
       const summaryData = groupedDriverAssignments.length > 0 ? {
-        driverAssignments: groupedDriverAssignments.map(group => ({
-          driver: group.driver,
-          totalWeight: parseFloat(group.assignments.reduce((sum, a) => sum + parseFloat(a.quantity), 0).toFixed(2)),
-          assignments: group.assignments.map(a => {
+        driverAssignments: groupedDriverAssignments.map(group => {
+          const driverInfo = assignmentOptions.drivers?.find(
+            d => `${d.driver_name} - ${d.driver_id}` === group.driver
+          );
+          return {
+            driver: group.driver,
+            driverId: driverInfo?.did ?? null,
+            totalWeight: parseFloat(group.assignments.reduce((sum, a) => sum + parseFloat(a.quantity), 0).toFixed(2)),
+            assignments: group.assignments.map(a => {
             let status = assignmentStatuses[a.routeId] || '';
             // Normalize status to lowercase for consistency (handle both "Completed" and "completed")
             if (status && typeof status === 'string') {
@@ -1070,7 +1075,8 @@ const LocalOrderAssign = () => {
               collectionStatus: status === 'Drop' ? assignmentStatuses[`${a.routeId}-collection`] || '' : ''
             };
           })
-        })),
+          };
+        }),
         totalCollections: deliveryRoutes.filter(route => route.driver).length,
         totalDrivers: groupedDriverAssignments.length,
         totalWeight: parseFloat(deliveryRoutes

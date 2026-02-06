@@ -17,6 +17,7 @@ const ReportSupplierOrderView = () => {
     const [loading, setLoading] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 7;
+    const API_BASE = process.env.VITE_API_BASE_URL || '';
 
     useEffect(() => {
         fetchOrderDetails();
@@ -250,6 +251,28 @@ const ReportSupplierOrderView = () => {
         doc.save(`Supplier_Order_${supplier.supplier_name}_${order.oid}.pdf`);
     };
 
+    const handleSendWhatsApp = async () => {
+        if (!supplier || !order) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/api/v1/report-whatsapp/supplier/send-whatsapp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ supplierId, orderId }),
+            });
+
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.message || 'Failed to send WhatsApp');
+            }
+
+            alert('WhatsApp sent to supplier successfully');
+        } catch (err) {
+            console.error(err);
+            alert('Error sending WhatsApp');
+        }
+    };
+
     const handleExportExcel = () => {
         if (!supplier || !order || supplierAssignments.length === 0) return;
 
@@ -399,6 +422,12 @@ const ReportSupplierOrderView = () => {
                         >
                             <FileSpreadsheet size={18} />
                             Export Excel
+                        </button>
+                        <button
+                            onClick={handleSendWhatsApp}
+                            className="flex items-center gap-2 px-4 py-2 bg-[#25D366] text-white rounded-lg hover:bg-[#1EBE57] transition-colors"
+                        >
+                            Send WhatsApp
                         </button>
                     </div>
                 </div>

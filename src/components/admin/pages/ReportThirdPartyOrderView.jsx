@@ -17,6 +17,7 @@ const ReportThirdPartyOrderView = () => {
     const [loading, setLoading] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 7;
+    const API_BASE = process.env.VITE_API_BASE_URL || '';
 
     useEffect(() => {
         fetchOrderDetails();
@@ -250,6 +251,28 @@ const ReportThirdPartyOrderView = () => {
         doc.save(`ThirdParty_Order_${thirdParty.third_party_name}_${order.oid}.pdf`);
     };
 
+    const handleSendWhatsApp = async () => {
+        if (!thirdParty || !order) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/api/v1/report-whatsapp/third-party/send-whatsapp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ thirdPartyId, orderId }),
+            });
+
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.message || 'Failed to send WhatsApp');
+            }
+
+            alert('WhatsApp sent to third party successfully');
+        } catch (err) {
+            console.error(err);
+            alert('Error sending WhatsApp');
+        }
+    };
+
     const handleExportExcel = () => {
         if (!thirdParty || !order || thirdPartyAssignments.length === 0) return;
 
@@ -396,6 +419,12 @@ const ReportThirdPartyOrderView = () => {
                         >
                             <FileSpreadsheet size={18} />
                             Export Excel
+                        </button>
+                        <button
+                            onClick={handleSendWhatsApp}
+                            className="flex items-center gap-2 px-4 py-2 bg-[#25D366] text-white rounded-lg hover:bg-[#1EBE57] transition-colors"
+                        >
+                            Send WhatsApp
                         </button>
                     </div>
                 </div>
