@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus,
   MoreVertical,
@@ -14,6 +14,8 @@ import * as XLSX from 'xlsx-js-style';
 
 const LabourManagement = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const pageFromUrl = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
   const [activeTab, setActiveTab] = useState('labourList');
   const [openDropdown, setOpenDropdown] = useState(null);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
@@ -26,8 +28,23 @@ const LabourManagement = () => {
   const [loading, setLoading] = useState(true);
   const [labourRates, setLabourRates] = useState({});
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, labourId: null, labourName: '' });
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(pageFromUrl);
   const itemsPerPage = 7;
+
+  useEffect(() => {
+    setCurrentPage(pageFromUrl);
+  }, [pageFromUrl]);
+
+  const setPage = useCallback((page) => {
+    const safePage = Math.max(1, page);
+    setCurrentPage(safePage);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (safePage === 1) next.delete('page');
+      else next.set('page', String(safePage));
+      return next;
+    });
+  }, [setSearchParams]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -174,7 +191,7 @@ const LabourManagement = () => {
     if (action === 'view') {
       navigate(`/labour/${labourId}`);
     } else if (action === 'edit') {
-      navigate(`/labour/${labourId}/edit`);
+      navigate(`/labour/${labourId}/edit`, { state: { returnTo: 'labour', returnPage: currentPage } });
     } else if (action === 'delete') {
       setDeleteModal({ isOpen: true, labourId, labourName });
     }
@@ -224,13 +241,19 @@ const LabourManagement = () => {
     return statusMatch && workTypeMatch;
   });
 
-  const totalPages = Math.ceil(filteredLabours.length / itemsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredLabours.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedLabours = filteredLabours.slice(startIndex, startIndex + itemsPerPage);
 
+  useEffect(() => {
+    if (!loading && currentPage > totalPages) {
+      setPage(totalPages);
+    }
+  }, [loading, currentPage, totalPages, setPage]);
+
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
-    setCurrentPage(1);
+    setPage(1);
   };
 
   // Export labours to Excel with all details
@@ -560,7 +583,7 @@ const LabourManagement = () => {
           </div>
           <div className="flex items-center gap-1 sm:gap-2 flex-wrap justify-center">
             <button
-              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+              onClick={() => setPage(Math.max(1, currentPage - 1))}
               disabled={currentPage === 1}
               className={`px-3 py-2 rounded-lg transition-colors ${currentPage === 1 ? 'text-gray-400 cursor-not-allowed' : 'text-[#6B8782] hover:bg-[#D0E0DB]'}`}
             >
@@ -577,7 +600,7 @@ const LabourManagement = () => {
                 return (
                   <button
                     key={pageNumber}
-                    onClick={() => setCurrentPage(pageNumber)}
+                    onClick={() => setPage(pageNumber)}
                     className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors ${currentPage === pageNumber
                       ? 'bg-[#10B981] text-white'
                       : 'text-[#6B8782] hover:bg-[#D0E0DB]'
@@ -600,7 +623,7 @@ const LabourManagement = () => {
             })}
 
             <button
-              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+              onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
               disabled={currentPage === totalPages}
               className={`px-3 py-2 rounded-lg transition-colors ${currentPage === totalPages ? 'text-gray-400 cursor-not-allowed' : 'text-[#6B8782] hover:bg-[#D0E0DB]'}`}
             >

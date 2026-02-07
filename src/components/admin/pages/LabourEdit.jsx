@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Camera, Calendar, ArrowLeft } from 'lucide-react';
 import { getLabourById, updateLabour } from '../../../api/labourApi';
 import { BASE_URL } from '../../../config/config';
@@ -7,7 +7,10 @@ import { BASE_URL } from '../../../config/config';
 const EditLabour = () => {
   const navigate = useNavigate();
   const { id } = useParams();
-  
+  const location = useLocation();
+  const returnTo = location.state?.returnTo;
+  const returnPage = location.state?.returnPage || 1;
+  const backPath = returnTo === 'labour' ? `/labour${returnPage > 1 ? `?page=${returnPage}` : ''}` : '/labour';
   const [formData, setFormData] = useState({
     fullName: '',
     labourId: '',
@@ -112,7 +115,7 @@ const EditLabour = () => {
       if (profileImage) formDataToSend.append('profile_image', profileImage);
       
       await updateLabour(id, formDataToSend);
-      navigate('/labour');
+      navigate(backPath);
     } catch (error) {
       console.error('Error updating labour:', error);
       alert(error.message || 'Failed to update labour. Please try again.');
@@ -122,11 +125,11 @@ const EditLabour = () => {
   };
 
   const handleCancel = () => {
-    navigate('/labour');
+    navigate(backPath);
   };
 
   const handleBackClick = () => {
-    navigate('/labour');
+    navigate(backPath);
   };
 
   return (

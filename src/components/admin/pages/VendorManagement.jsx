@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, Plus, MoreVertical, Eye, Edit, Trash2, Download } from 'lucide-react';
 import ConfirmDeleteModal from '../../common/ConfirmDeleteModal';
 import { getAllVendors } from '../../../api/vendorApi';
@@ -10,7 +10,9 @@ import { usePermissions } from '../../../context/PermissionsContext';
 
 const VendorDashboard = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { loading: permLoading, hasPermission } = usePermissions();
+  const pageFromUrl = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
   const [searchQuery, setSearchQuery] = useState('');
   const [openDropdown, setOpenDropdown] = useState(null);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
@@ -20,8 +22,13 @@ const VendorDashboard = () => {
   const [allProducts, setAllProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(pageFromUrl);
   const itemsPerPage = 7;
+
+  // Sync currentPage with URL on load and when URL changes (e.g. after refresh)
+  useEffect(() => {
+    setCurrentPage(pageFromUrl);
+  }, [pageFromUrl]);
 
   // Fetch vendors and products from API
   useEffect(() => {
@@ -83,6 +90,17 @@ const VendorDashboard = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const setPage = useCallback((page) => {
+    const safePage = Math.max(1, page);
+    setCurrentPage(safePage);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (safePage === 1) next.delete('page');
+      else next.set('page', String(safePage));
+      return next;
+    });
+  }, [setSearchParams]);
+
   const toggleDropdown = (vendorKey, event) => {
     if (openDropdown === vendorKey) {
       setOpenDropdown(null);
@@ -107,13 +125,14 @@ const VendorDashboard = () => {
         navigate(`/third-party/${vendor.tpid}`);
       }
     } else if (action === 'edit') {
-      // Navigate to edit based on vendor type
+      // Navigate to edit based on vendor type; pass current page so we can return to it
+      const state = { returnTo: 'vendors', returnPage: currentPage };
       if (vendor.vendor_type === 'farmer') {
-        navigate(`/farmers/${vendor.fid}/edit`);
+        navigate(`/farmers/${vendor.fid}/edit`, { state });
       } else if (vendor.vendor_type === 'supplier') {
-        navigate(`/suppliers/${vendor.sid}/edit`);
+        navigate(`/suppliers/${vendor.sid}/edit`, { state });
       } else if (vendor.vendor_type === 'third party') {
-        navigate(`/third-party/${vendor.tpid}/edit`);
+        navigate(`/third-party/${vendor.tpid}/edit`, { state });
       }
     } else if (action === 'delete') {
       setDeleteModal({ isOpen: true, vendor, vendorName: vendor.name || vendor.farmer_name || vendor.supplier_name || vendor.third_party_name });
@@ -202,6 +221,18 @@ const VendorDashboard = () => {
     { label: 'Suppliers', value: supplierCount.toString(), change: '', color: 'bg-gradient-to-r from-[#10B981] to-[#059669]' },
     { label: 'Third Party', value: thirdPartyCount.toString(), change: '', color: 'bg-gradient-to-r from-[#047857] to-[#065F46]' }
   ];
+
+  // Pagination calculations (before early returns so hooks are always called)
+  const totalPages = Math.max(1, Math.ceil(filteredVendors.length / itemsPerPage));
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedVendors = filteredVendors.slice(startIndex, startIndex + itemsPerPage);
+
+  // Clamp current page to valid range when totalPages shrinks (e.g. after search)
+  useEffect(() => {
+    if (!loading && !permLoading && currentPage > totalPages) {
+      setPage(totalPages);
+    }
+  }, [loading, permLoading, currentPage, totalPages, setPage]);
 
   // Export vendors to Excel with all details
   const handleExportVendors = async () => {
@@ -406,11 +437,6 @@ const VendorDashboard = () => {
     );
   }
 
-  // Pagination calculations
-  const totalPages = Math.ceil(filteredVendors.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedVendors = filteredVendors.slice(startIndex, startIndex + itemsPerPage);
-
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       {/* Header with Add Button */}
@@ -592,7 +618,7 @@ const VendorDashboard = () => {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+              onClick={() => setPage(Math.max(1, currentPage - 1))}
               disabled={currentPage === 1}
               className={`px-3 py-2 rounded-lg transition-colors ${currentPage === 1 ? 'text-gray-400 cursor-not-allowed' : 'text-[#6B8782] hover:bg-[#D0E0DB]'}`}
             >
@@ -609,7 +635,7 @@ const VendorDashboard = () => {
                 return (
                   <button
                     key={pageNumber}
-                    onClick={() => setCurrentPage(pageNumber)}
+                    onClick={() => setPage(pageNumber)}
                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${currentPage === pageNumber
                       ? 'bg-[#0D8568] text-white'
                       : 'text-[#6B8782] hover:bg-[#D0E0DB]'
@@ -632,7 +658,7 @@ const VendorDashboard = () => {
             })}
 
             <button
-              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+              onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
               disabled={currentPage === totalPages}
               className={`px-3 py-2 rounded-lg transition-colors ${currentPage === totalPages ? 'text-gray-400 cursor-not-allowed' : 'text-[#6B8782] hover:bg-[#D0E0DB]'}`}
             >

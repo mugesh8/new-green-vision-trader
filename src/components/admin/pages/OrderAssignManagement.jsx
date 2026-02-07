@@ -93,6 +93,22 @@ const OrderAssignManagement = () => {
     );
   });
 
+  const itemsPerPage = 7;
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / itemsPerPage));
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedOrders = filteredOrders.slice(startIndex, startIndex + itemsPerPage);
+
+  const setPage = (page) => {
+    const safePage = Math.max(1, Math.min(totalPages, page));
+    setCurrentPage(safePage);
+  };
+
+  useEffect(() => {
+    if (!loading && totalPages > 0 && currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [loading, totalPages, currentPage]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 p-4 sm:p-6 lg:p-8 flex items-center justify-center">
@@ -134,7 +150,10 @@ const OrderAssignManagement = () => {
               type="text"
               placeholder="Search by order ID, customer..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
               className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
             />
           </div>
@@ -202,7 +221,7 @@ const OrderAssignManagement = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredOrders.map((order, index) => (
+              {paginatedOrders.map((order, index) => (
                 <tr key={order.oid} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className="text-sm font-medium text-gray-900">{order.order_id}</span>
@@ -317,20 +336,36 @@ const OrderAssignManagement = () => {
           </table>
         </div>
 
-        {/* Pagination */}
+        {/* Pagination - 7 items per page */}
         <div className="border-t border-gray-200 px-4 py-4 sm:px-6">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <p className="text-sm text-gray-600">
-              Showing <span className="font-medium">{filteredOrders.length}</span> of <span className="font-medium">{orders.length}</span> Orders
+              Showing {filteredOrders.length === 0 ? 0 : startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredOrders.length)} of <span className="font-medium">{filteredOrders.length}</span> Orders
             </p>
             <div className="flex items-center gap-2">
-              <button className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              <button
+                onClick={() => setPage(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 <ChevronLeft className="w-4 h-4 text-gray-600" />
               </button>
-              <button className="w-10 h-10 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors">
-                1
-              </button>
-              <button className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                <button
+                  key={page}
+                  onClick={() => setPage(page)}
+                  className={`w-10 h-10 rounded-lg font-medium transition-colors ${
+                    currentPage === page ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'border border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  {page}
+                </button>
+              ))}
+              <button
+                onClick={() => setPage(currentPage + 1)}
+                disabled={currentPage === totalPages || totalPages === 0}
+                className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 <ChevronRight className="w-4 h-4 text-gray-600" />
               </button>
             </div>

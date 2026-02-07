@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { ArrowLeft, Plus, X } from 'lucide-react';
 import { getFarmerById, updateFarmer } from '../../../api/farmerApi';
 import { getAllProducts } from '../../../api/productApi';
@@ -8,6 +8,15 @@ import { BASE_URL } from '../../../config/config';
 const EditFarmer = () => {
   const navigate = useNavigate();
   const { id } = useParams();
+  const location = useLocation();
+  const returnTo = location.state?.returnTo;
+  const returnPage = location.state?.returnPage || 1;
+  const backPath = returnTo === 'vendors'
+    ? `/vendors${returnPage > 1 ? `?page=${returnPage}` : ''}`
+    : returnTo === 'farmers'
+      ? `/farmers${returnPage > 1 ? `?page=${returnPage}` : ''}`
+      : '/farmers';
+  const returnToVendors = returnTo === 'vendors';
   
   const [formData, setFormData] = useState({
     farmer_name: '',
@@ -176,7 +185,7 @@ const EditFarmer = () => {
 
       await updateFarmer(id, farmerPayload);
       setSuccess(true);
-      setTimeout(() => navigate('/farmers'), 1500);
+      setTimeout(() => navigate(backPath), 1500);
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Failed to update farmer');
     } finally {
@@ -190,11 +199,11 @@ const EditFarmer = () => {
         {/* Header */}
         <div className="flex items-center gap-4 mb-6">
           <button
-            onClick={() => navigate('/farmers')}
+            onClick={() => navigate(backPath)}
             className="flex items-center gap-2 text-[#0D5C4D] hover:text-[#0a6354] transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
-            <span className="font-medium">Back to Farmers</span>
+            <span className="font-medium">{returnTo === 'vendors' ? 'Back to Vendors' : returnTo === 'farmers' ? 'Back to Farmers' : 'Back to Farmers'}</span>
           </button>
         </div>
 
@@ -597,7 +606,7 @@ const EditFarmer = () => {
             <div className="flex gap-3">
               <button
                 type="button"
-                onClick={() => navigate('/farmers')}
+                onClick={() => navigate(backPath)}
                 disabled={isLoading}
                 className="px-8 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import {
   Search,
   ChevronDown,
@@ -18,6 +18,9 @@ import * as XLSX from 'xlsx-js-style';
 
 const DriverManagement = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const currentPage = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -26,10 +29,15 @@ const DriverManagement = () => {
   const dropdownRef = useRef(null);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, driverId: null, driverName: '' });
   const [drivers, setDrivers] = useState([]);
-  const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 7;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const setPage = useCallback((page) => {
+    const safePage = Math.max(1, page);
+    const search = safePage === 1 ? '' : `?page=${safePage}`;
+    navigate({ pathname: location.pathname, search }, { replace: true });
+  }, [navigate, location.pathname]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -154,7 +162,7 @@ const DriverManagement = () => {
         console.error('Invalid driver ID:', driverId);
         return;
       }
-      navigate(`/drivers/${driverId}/edit`);
+      navigate(`/drivers/${driverId}/edit`, { state: { returnTo: 'drivers', returnPage: currentPage } });
     } else if (action === 'delete') {
       setDeleteModal({ isOpen: true, driverId, driverName });
     }
@@ -203,14 +211,26 @@ const DriverManagement = () => {
     return matchesSearch && matchesStatus;
   });
 
-  const totalPages = Math.ceil(filteredDrivers.length / itemsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredDrivers.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const currentDrivers = filteredDrivers.slice(startIndex, startIndex + itemsPerPage);
 
-  // Reset page when filters change
   useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, statusFilter]);
+    if (!loading && currentPage > totalPages) {
+      setPage(totalPages);
+    }
+  }, [loading, currentPage, totalPages, setPage]);
+
+  // Reset page to 1 only when user changes search or filter (not on initial mount)
+  const prevSearchRef = useRef(searchQuery);
+  const prevStatusRef = useRef(statusFilter);
+  useEffect(() => {
+    if (prevSearchRef.current !== searchQuery || prevStatusRef.current !== statusFilter) {
+      prevSearchRef.current = searchQuery;
+      prevStatusRef.current = statusFilter;
+      setPage(1);
+    }
+  }, [searchQuery, statusFilter, setPage]);
 
   // Export drivers to Excel with all details
   const handleExportDrivers = async () => {
@@ -541,7 +561,7 @@ const DriverManagement = () => {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                  onClick={() => setPage(Math.max(1, currentPage - 1))}
                   disabled={currentPage === 1}
                   className={`px-3 py-2 rounded-lg transition-colors ${currentPage === 1 ? 'text-gray-400 cursor-not-allowed' : 'text-[#6B8782] hover:bg-[#D0E0DB]'}`}
                 >
@@ -558,7 +578,7 @@ const DriverManagement = () => {
                   return (
                     <button
                       key={page}
-                      onClick={() => setCurrentPage(page)}
+                      onClick={() => setPage(page)}
                       className={`px-4 py-2 rounded-lg font-medium transition-colors ${currentPage === page ? 'bg-[#0D8568] text-white' : 'text-[#6B8782] hover:bg-[#D0E0DB]'}`}
                     >
                       {page}
@@ -567,7 +587,7 @@ const DriverManagement = () => {
                 })}
 
                 <button
-                  onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                  onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
                   disabled={currentPage === totalPages || totalPages === 0}
                   className={`px-3 py-2 rounded-lg transition-colors ${currentPage === totalPages || totalPages === 0 ? 'text-gray-400 cursor-not-allowed' : 'text-[#6B8782] hover:bg-[#D0E0DB]'}`}
                 >

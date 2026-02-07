@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Search, Plus, MoreVertical, Download } from 'lucide-react';
 import ConfirmDeleteModal from '../../common/ConfirmDeleteModal';
 import { getAllSuppliers, deleteSupplier } from '../../../api/supplierApi';
@@ -9,6 +9,9 @@ import * as XLSX from 'xlsx-js-style';
 
 const SupplierDashboard = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const currentPage = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
   const [openDropdown, setOpenDropdown] = useState(null);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const dropdownRef = useRef(null);
@@ -16,11 +19,16 @@ const SupplierDashboard = () => {
   const [suppliers, setSuppliers] = useState([]);
   const [allSuppliers, setAllSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState('recent');
   const itemsPerPage = 7;
+
+  const setPage = useCallback((page) => {
+    const safePage = Math.max(1, page);
+    const search = safePage === 1 ? '' : `?page=${safePage}`;
+    navigate({ pathname: location.pathname, search }, { replace: true });
+  }, [navigate, location.pathname]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -95,6 +103,12 @@ const SupplierDashboard = () => {
   }, [allSuppliers, searchQuery, sortOrder, currentPage]);
 
   useEffect(() => {
+    if (!loading && totalPages > 0 && currentPage > totalPages) {
+      setPage(totalPages);
+    }
+  }, [loading, totalPages, currentPage, setPage]);
+
+  useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setOpenDropdown(null);
@@ -123,7 +137,7 @@ const SupplierDashboard = () => {
     if (action === 'view') {
       navigate(`/suppliers/${supplierId}`);
     } else if (action === 'edit') {
-      navigate(`/suppliers/${supplierId}/edit`);
+      navigate(`/suppliers/${supplierId}/edit`, { state: { returnTo: 'suppliers', returnPage: currentPage } });
     } else if (action === 'delete') {
       setDeleteModal({ isOpen: true, supplierId, supplierName });
     }
@@ -393,7 +407,7 @@ const SupplierDashboard = () => {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              onClick={() => setPage(Math.max(1, currentPage - 1))}
               disabled={currentPage === 1}
               className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
               &lt;
@@ -401,14 +415,14 @@ const SupplierDashboard = () => {
             {[...Array(totalPages)].map((_, i) => (
               <button
                 key={i + 1}
-                onClick={() => setCurrentPage(i + 1)}
+                onClick={() => setPage(i + 1)}
                 className={`px-4 py-2 rounded-lg font-medium transition-colors ${currentPage === i + 1 ? 'bg-[#0D8568] text-white' : 'text-[#6B8782] hover:bg-[#D0E0DB]'
                   }`}>
                 {i + 1}
               </button>
             ))}
             <button
-              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
               disabled={currentPage === totalPages}
               className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
               &gt;

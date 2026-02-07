@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, Filter, Download } from 'lucide-react';
 import { getAllOrders } from '../../../api/orderApi';
 import { getOrderAssignment } from '../../../api/orderAssignmentApi';
@@ -8,10 +8,27 @@ import { getPaidRecords, markAsPaid } from '../../../api/payoutApi';
 
 const PayoutManagement = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const pageFromUrl = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
   const [activeTab, setActiveTab] = useState('farmer');
   const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(pageFromUrl);
   const itemsPerPage = 7;
+
+  useEffect(() => {
+    setCurrentPage(pageFromUrl);
+  }, [pageFromUrl]);
+
+  const setPage = useCallback((page) => {
+    const safePage = Math.max(1, page);
+    setCurrentPage(safePage);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (safePage === 1) next.delete('page');
+      else next.set('page', String(safePage));
+      return next;
+    });
+  }, [setSearchParams]);
 
   const [loading, setLoading] = useState(true);
   const [payouts, setPayouts] = useState([]); // farmer payouts only
@@ -457,7 +474,7 @@ const PayoutManagement = () => {
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                onClick={() => setPage(Math.max(1, currentPage - 1))}
                 disabled={currentPage === 1}
                 className={`px-3 py-2 rounded-lg transition-colors ${
                   currentPage === 1
@@ -472,7 +489,7 @@ const PayoutManagement = () => {
                 return (
                   <button
                     key={page}
-                    onClick={() => setCurrentPage(page)}
+                    onClick={() => setPage(page)}
                     className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                       currentPage === page
                         ? 'bg-[#0D8568] text-white'
@@ -484,7 +501,7 @@ const PayoutManagement = () => {
                 );
               })}
               <button
-                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
                 disabled={currentPage === totalPages}
                 className={`px-3 py-2 rounded-lg transition-colors ${
                   currentPage === totalPages

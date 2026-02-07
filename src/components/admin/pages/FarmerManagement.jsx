@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import {
   Search,
   Plus,
@@ -19,6 +19,10 @@ import * as XLSX from 'xlsx-js-style';
 
 const Farmers = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  // Read page from URL so refresh keeps the page (single source of truth)
+  const currentPage = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
   const [activeTab, setActiveTab] = useState('all'); // all or orderList
   const [openDropdown, setOpenDropdown] = useState(null);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
@@ -27,11 +31,16 @@ const Farmers = () => {
   const [farmers, setFarmers] = useState([]);
   const [allFarmers, setAllFarmers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState('recent');
   const itemsPerPage = 7;
+
+  const setPage = useCallback((page) => {
+    const safePage = Math.max(1, page);
+    const search = safePage === 1 ? '' : `?page=${safePage}`;
+    navigate({ pathname: location.pathname, search }, { replace: true });
+  }, [navigate, location.pathname]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -102,6 +111,12 @@ const Farmers = () => {
   }, [allFarmers, searchQuery, sortOrder, currentPage]);
 
   useEffect(() => {
+    if (!loading && totalPages > 0 && currentPage > totalPages) {
+      setPage(totalPages);
+    }
+  }, [loading, totalPages, currentPage, setPage]);
+
+  useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setOpenDropdown(null);
@@ -129,7 +144,7 @@ const Farmers = () => {
     if (action === 'view') {
       navigate(`/farmers/${farmerId}`);
     } else if (action === 'edit') {
-      navigate(`/farmers/${farmerId}/edit`);
+      navigate(`/farmers/${farmerId}/edit`, { state: { returnTo: 'farmers', returnPage: currentPage } });
     } else if (action === 'delete') {
       setDeleteModal({ isOpen: true, farmerId, farmerName });
     }
@@ -397,7 +412,7 @@ const Farmers = () => {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              onClick={() => setPage(Math.max(1, currentPage - 1))}
               disabled={currentPage === 1}
               className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
               &lt;
@@ -405,14 +420,14 @@ const Farmers = () => {
             {[...Array(totalPages)].map((_, i) => (
               <button
                 key={i + 1}
-                onClick={() => setCurrentPage(i + 1)}
+                onClick={() => setPage(i + 1)}
                 className={`px-4 py-2 rounded-lg font-medium transition-colors ${currentPage === i + 1 ? 'bg-[#0D8568] text-white' : 'text-[#6B8782] hover:bg-[#D0E0DB]'
                   }`}>
                 {i + 1}
               </button>
             ))}
             <button
-              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
               disabled={currentPage === totalPages}
               className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
               &gt;

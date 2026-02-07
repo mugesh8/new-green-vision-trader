@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Upload, Eye, EyeOff, ChevronRight, ArrowLeft } from 'lucide-react';
 import { getDriverById, updateDriver } from '../../../api/driverApi';
 
 const EditDriver = () => {
   const navigate = useNavigate();
   const { id } = useParams();
+  const location = useLocation();
+  const returnTo = location.state?.returnTo;
+  const returnPage = location.state?.returnPage || 1;
+  const backPath = returnTo === 'drivers' ? `/drivers${returnPage > 1 ? `?page=${returnPage}` : ''}` : '/drivers';
   const [formData, setFormData] = useState({
     driver_id: '',
     driver_name: '',
@@ -136,7 +140,7 @@ const EditDriver = () => {
       fetchDriverData();
     } else {
       // If no ID provided, redirect to drivers list
-      navigate('/drivers');
+      navigate(backPath);
     }
   }, [id, navigate]);
 
@@ -197,7 +201,7 @@ const EditDriver = () => {
       if (kaPermitDoc) formDataToSend.append('ka_permit_doc', kaPermitDoc);
       
       await updateDriver(id, formDataToSend);
-      navigate('/drivers');
+      navigate(backPath);
     } catch (error) {
       console.error('Error updating driver:', error);
       setError(error.message || 'Failed to update driver. Please try again.');
@@ -212,7 +216,7 @@ const EditDriver = () => {
         {/* Header */}
         <div className="flex items-center gap-4 mb-6">
           <button
-            onClick={() => navigate('/drivers')}
+            onClick={() => navigate(backPath)}
             className="flex items-center gap-2 text-gray-600 hover:text-gray-800 transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -228,7 +232,7 @@ const EditDriver = () => {
           <div className="bg-red-50 border border-red-200 rounded-lg p-6 mb-6">
             <div className="text-red-700 font-medium">{error}</div>
             <button
-              onClick={() => navigate('/drivers')}
+              onClick={() => navigate(backPath)}
               className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
             >
               Back to Drivers
@@ -1096,7 +1100,7 @@ const EditDriver = () => {
               <div className="flex gap-3">
                 <button
                   type="button"
-                  onClick={() => navigate('/drivers')}
+                  onClick={() => navigate(backPath)}
                   className="px-6 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
                 >
                   Cancel

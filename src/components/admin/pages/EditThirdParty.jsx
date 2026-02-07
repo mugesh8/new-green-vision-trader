@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { ArrowLeft, Plus, X } from 'lucide-react';
 import { getThirdPartyById, updateThirdParty } from '../../../api/thirdPartyApi';
 import { getAllProducts } from '../../../api/productApi';
@@ -8,6 +8,15 @@ import { BASE_URL } from '../../../config/config';
 const EditThirdParty = () => {
   const navigate = useNavigate();
   const { id } = useParams();
+  const location = useLocation();
+  const returnTo = location.state?.returnTo;
+  const returnPage = location.state?.returnPage || 1;
+  const backPath = returnTo === 'vendors'
+    ? `/vendors${returnPage > 1 ? `?page=${returnPage}` : ''}`
+    : returnTo === 'third-party'
+      ? `/third-party${returnPage > 1 ? `?page=${returnPage}` : ''}`
+      : '/third-party';
+  const returnToVendors = returnTo === 'vendors';
   
   const [formData, setFormData] = useState({
     thirdPartyName: '',
@@ -153,8 +162,8 @@ const EditThirdParty = () => {
       const response = await updateThirdParty(id, submitData, profileImage);
       // console.log('API Response:', response);
       
-      // Navigate back to third party list on success
-      navigate('/third-party');
+      // Navigate back to third party list or vendors (with page) on success
+      navigate(backPath);
     } catch (err) {
       console.error('Error updating third party:', err);
       // Log more details about the error for debugging
@@ -180,11 +189,11 @@ const EditThirdParty = () => {
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center gap-4 mb-6">
           <button
-            onClick={() => navigate('/third-party')}
+            onClick={() => navigate(backPath)}
             className="flex items-center gap-2 text-[#0D5C4D] hover:text-[#0a6354] transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
-            <span className="font-medium">Back to Third Party</span>
+            <span className="font-medium">{returnTo === 'vendors' ? 'Back to Vendors' : returnTo === 'third-party' ? 'Back to Third Party' : 'Back to Third Party'}</span>
           </button>
         </div>
 
@@ -552,7 +561,7 @@ const EditThirdParty = () => {
             </button>
             <button
               type="button"
-              onClick={() => navigate('/third-party')}
+              onClick={() => navigate(backPath)}
               className="w-full sm:w-auto px-8 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors shadow-sm"
             >
               Cancel

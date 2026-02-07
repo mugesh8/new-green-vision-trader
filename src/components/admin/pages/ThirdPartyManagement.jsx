@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, Plus, MoreVertical, Eye, Edit, Trash2, Download } from 'lucide-react';
 import ConfirmDeleteModal from '../../common/ConfirmDeleteModal';
 import { getAllThirdParties } from '../../../api/thirdPartyApi';
@@ -9,6 +9,8 @@ import * as XLSX from 'xlsx-js-style';
 
 const ThirdPartyManagement = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const pageFromUrl = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
   const [openDropdown, setOpenDropdown] = useState(null);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const dropdownRef = useRef(null);
@@ -17,9 +19,24 @@ const ThirdPartyManagement = () => {
   const [allProducts, setAllProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(pageFromUrl);
   const [searchQuery, setSearchQuery] = useState('');
   const itemsPerPage = 7;
+
+  useEffect(() => {
+    setCurrentPage(pageFromUrl);
+  }, [pageFromUrl]);
+
+  const setPage = useCallback((page) => {
+    const safePage = Math.max(1, page);
+    setCurrentPage(safePage);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (safePage === 1) next.delete('page');
+      else next.set('page', String(safePage));
+      return next;
+    });
+  }, [setSearchParams]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -77,7 +94,7 @@ const ThirdPartyManagement = () => {
     if (action === 'view') {
       navigate(`/third-party/${thirdPartyId}`);
     } else if (action === 'edit') {
-      navigate(`/third-party/${thirdPartyId}/edit`);
+      navigate(`/third-party/${thirdPartyId}/edit`, { state: { returnTo: 'third-party', returnPage: currentPage } });
     } else if (action === 'delete') {
       setDeleteModal({ isOpen: true, thirdPartyId, thirdPartyName });
     }
@@ -219,9 +236,15 @@ const ThirdPartyManagement = () => {
     tp.location.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const totalPages = Math.ceil(filteredThirdParties.length / itemsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredThirdParties.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedThirdParties = filteredThirdParties.slice(startIndex, startIndex + itemsPerPage);
+
+  useEffect(() => {
+    if (!loading && !error && currentPage > totalPages) {
+      setPage(totalPages);
+    }
+  }, [loading, error, currentPage, totalPages, setPage]);
 
   const stats = calculateStats(thirdParties);
 
@@ -300,7 +323,7 @@ const ThirdPartyManagement = () => {
           value={searchQuery}
           onChange={(e) => {
             setSearchQuery(e.target.value);
-            setCurrentPage(1);
+            setPage(1);
           }}
           className="w-full pl-12 pr-4 py-3 bg-[#F0F4F3] border-none rounded-xl text-[#0D5C4D] placeholder-[#6B8782] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
         />
@@ -411,7 +434,7 @@ const ThirdPartyManagement = () => {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              onClick={() => setPage(Math.max(1, currentPage - 1))}
               disabled={currentPage === 1}
               className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -420,7 +443,7 @@ const ThirdPartyManagement = () => {
             {[...Array(totalPages)].map((_, i) => (
               <button
                 key={i + 1}
-                onClick={() => setCurrentPage(i + 1)}
+                onClick={() => setPage(i + 1)}
                 className={`px-4 py-2 rounded-lg font-medium transition-colors ${currentPage === i + 1 ? 'bg-[#0D8568] text-white' : 'text-[#6B8782] hover:bg-[#D0E0DB]'
                   }`}
               >
@@ -428,7 +451,7 @@ const ThirdPartyManagement = () => {
               </button>
             ))}
             <button
-              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
               disabled={currentPage === totalPages}
               className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >

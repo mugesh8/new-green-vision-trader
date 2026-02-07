@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { ArrowLeft, Plus, X } from 'lucide-react';
 import { getSupplierById, updateSupplier } from '../../../api/supplierApi';
 import { getAllProducts } from '../../../api/productApi';
@@ -8,6 +8,15 @@ import { BASE_URL } from '../../../config/config';
 const EditSupplier = () => {
   const navigate = useNavigate();
   const { id } = useParams();
+  const location = useLocation();
+  const returnTo = location.state?.returnTo;
+  const returnPage = location.state?.returnPage || 1;
+  const backPath = returnTo === 'vendors'
+    ? `/vendors${returnPage > 1 ? `?page=${returnPage}` : ''}`
+    : returnTo === 'suppliers'
+      ? `/suppliers${returnPage > 1 ? `?page=${returnPage}` : ''}`
+      : '/suppliers';
+  const returnToVendors = returnTo === 'vendors';
   
   const [profileImage, setProfileImage] = useState(null);
   const [profileImagePreview, setProfileImagePreview] = useState(null);
@@ -142,7 +151,7 @@ const EditSupplier = () => {
       };
 
       await updateSupplier(id, supplierPayload);
-      navigate('/suppliers');
+      navigate(backPath);
     } catch (error) {
       console.error('Failed to update supplier:', error);
     }
@@ -161,11 +170,11 @@ const EditSupplier = () => {
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center gap-4 mb-6">
           <button
-            onClick={() => navigate('/suppliers')}
+            onClick={() => navigate(backPath)}
             className="flex items-center gap-2 text-[#0D5C4D] hover:text-[#0a6354] transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
-            <span className="font-medium">Back to Suppliers</span>
+            <span className="font-medium">{returnTo === 'vendors' ? 'Back to Vendors' : returnTo === 'suppliers' ? 'Back to Suppliers' : 'Back to Suppliers'}</span>
           </button>
         </div>
 
@@ -539,7 +548,7 @@ const EditSupplier = () => {
               </button>
               <button
                 type="button"
-                onClick={() => navigate('/suppliers')}
+                onClick={() => navigate(backPath)}
                 className="px-8 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors shadow-sm"
               >
                 Cancel
