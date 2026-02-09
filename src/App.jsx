@@ -16,6 +16,7 @@ import FarmerIndividualOrderHistory from './components/admin/pages/FarmerIndivid
 import FarmerOrderDetails from './components/admin/pages/FarmerOrderDetails'
 import FarmerPayout from './components/admin/pages/FarmerPayout'
 import VegetableAvailability from './components/admin/pages/VegetableAvailability'
+import VegetableHistory from './components/admin/pages/VegetableHistory'
 import VendorDetails from './components/admin/pages/VendorDetails'
 import AddVendorForm from './components/admin/pages/AddVendor'
 import EditVendorDetails from './components/admin/pages/EditVendor'
@@ -288,6 +289,18 @@ const App = () => {
               <Layout>
                 <RequirePermission module="Farmers" action="vegetableavailability">
                   <VegetableAvailability />
+                </RequirePermission>
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/farmers/:id/vegetable-history"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <RequirePermission module="Farmers" action="vegetableavailability">
+                  <VegetableHistory />
                 </RequirePermission>
               </Layout>
             </ProtectedRoute>

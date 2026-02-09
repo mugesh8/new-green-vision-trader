@@ -324,6 +324,12 @@ const FarmerPayout = () => {
           >
             Vegetable Availability
           </button>
+          <button
+            onClick={() => navigate(`/farmers/${id}/vegetable-history`)}
+            className="px-6 py-2.5 bg-white text-gray-700 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+          >
+            Vegetable History
+          </button>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-4 mb-6">

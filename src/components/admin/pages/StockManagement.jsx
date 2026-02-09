@@ -1298,7 +1298,7 @@ const StockManagement = () => {
                                 {new Date(item.createdAt).toLocaleDateString()}
                               </td>
                               <td className="px-6 py-4 text-sm font-medium text-[#0D5C4D]">
-                                {stockItem?.order_id || 'N/A'}
+                                {item.stock_item_name || 'N/A'}
                               </td>
                               <td className="px-6 py-4 text-sm text-[#0D5C4D]">
                                 {entityName || 'N/A'}

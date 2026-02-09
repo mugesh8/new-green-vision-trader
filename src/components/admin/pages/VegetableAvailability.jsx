@@ -217,6 +217,12 @@ const VegetableAvailability = () => {
         <button className="px-6 py-2.5 bg-[#0D7C66] text-white rounded-lg font-medium transition-colors shadow-sm">
           Vegetable Availability
         </button>
+        <button
+          onClick={() => navigate(`/farmers/${id}/vegetable-history`)}
+          className="px-6 py-2.5 bg-white text-gray-700 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+        >
+          Vegetable History
+        </button>
       </div>
 
       <div className="bg-white rounded-lg shadow-sm p-6">

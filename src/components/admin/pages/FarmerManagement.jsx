@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Search,
   Plus,
@@ -19,10 +19,6 @@ import * as XLSX from 'xlsx-js-style';
 
 const Farmers = () => {
   const navigate = useNavigate();
-  const location = useLocation();
-  const [searchParams] = useSearchParams();
-  // Read page from URL so refresh keeps the page (single source of truth)
-  const currentPage = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
   const [activeTab, setActiveTab] = useState('all'); // all or orderList
   const [openDropdown, setOpenDropdown] = useState(null);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
@@ -31,16 +27,11 @@ const Farmers = () => {
   const [farmers, setFarmers] = useState([]);
   const [allFarmers, setAllFarmers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState('recent');
   const itemsPerPage = 7;
-
-  const setPage = useCallback((page) => {
-    const safePage = Math.max(1, page);
-    const search = safePage === 1 ? '' : `?page=${safePage}`;
-    navigate({ pathname: location.pathname, search }, { replace: true });
-  }, [navigate, location.pathname]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -111,12 +102,6 @@ const Farmers = () => {
   }, [allFarmers, searchQuery, sortOrder, currentPage]);
 
   useEffect(() => {
-    if (!loading && totalPages > 0 && currentPage > totalPages) {
-      setPage(totalPages);
-    }
-  }, [loading, totalPages, currentPage, setPage]);
-
-  useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setOpenDropdown(null);
@@ -144,7 +129,7 @@ const Farmers = () => {
     if (action === 'view') {
       navigate(`/farmers/${farmerId}`);
     } else if (action === 'edit') {
-      navigate(`/farmers/${farmerId}/edit`, { state: { returnTo: 'farmers', returnPage: currentPage } });
+      navigate(`/farmers/${farmerId}/edit`);
     } else if (action === 'delete') {
       setDeleteModal({ isOpen: true, farmerId, farmerName });
     }
@@ -230,6 +215,27 @@ const Farmers = () => {
 
   const totalFarmers = allFarmers.length;
   const activeFarmers = allFarmers.filter(f => f.status === 'active').length;
+
+  // Pagination: truncated range with ellipsis (e.g. 1 2 ... 9)
+  const getPaginationPages = () => {
+    if (totalPages <= 5) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    const pages = new Set([1, totalPages]);
+    for (let i = Math.max(1, currentPage - 1); i <= Math.min(totalPages, currentPage + 1); i++) {
+      pages.add(i);
+    }
+    const sorted = Array.from(pages).sort((a, b) => a - b);
+    const result = [];
+    for (let i = 0; i < sorted.length; i++) {
+      result.push(sorted[i]);
+      if (i < sorted.length - 1 && sorted[i + 1] - sorted[i] > 1) {
+        result.push('...');
+      }
+    }
+    return result;
+  };
+  const paginationPages = getPaginationPages();
 
   const stats = [
     { label: 'Total Farmers', value: totalFarmers.toString(), color: 'bg-gradient-to-r from-[#D1FAE5] to-[#A7F3D0]' },
@@ -405,32 +411,46 @@ const Farmers = () => {
           </table>
         </div>
 
-        {/* Pagination */}
+        {/* Pagination - truncated with ellipsis */}
         <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
           <div className="text-sm text-[#6B8782]">
             Showing page {currentPage} of {totalPages}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <button
-              onClick={() => setPage(Math.max(1, currentPage - 1))}
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
               disabled={currentPage === 1}
-              className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-              &lt;
+              className="p-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Previous page"
+            >
+              <ChevronLeft size={20} />
             </button>
-            {[...Array(totalPages)].map((_, i) => (
-              <button
-                key={i + 1}
-                onClick={() => setPage(i + 1)}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${currentPage === i + 1 ? 'bg-[#0D8568] text-white' : 'text-[#6B8782] hover:bg-[#D0E0DB]'
-                  }`}>
-                {i + 1}
-              </button>
-            ))}
+            {paginationPages.map((page, idx) =>
+              page === '...' ? (
+                <span key={`ellipsis-${idx}`} className="px-2 py-2 text-[#6B8782]">
+                  ...
+                </span>
+              ) : (
+                <button
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  className={`min-w-[2.25rem] px-3 py-2 rounded-lg font-medium transition-colors ${
+                    currentPage === page
+                      ? 'bg-[#0D8568] text-white'
+                      : 'text-[#6B8782] hover:bg-[#D0E0DB]'
+                  }`}
+                >
+                  {page}
+                </button>
+              )
+            )}
             <button
-              onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
               disabled={currentPage === totalPages}
-              className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-              &gt;
+              className="p-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Next page"
+            >
+              <ChevronRight size={20} />
             </button>
           </div>
         </div>
