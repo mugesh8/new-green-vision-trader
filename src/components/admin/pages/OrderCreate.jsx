@@ -1085,18 +1085,56 @@ const NewOrder = () => {
           navigate("/orders");
         }
       } else {
-        alert(
-          (orderId ? "Failed to update order: " : "Failed to create order: ") +
-          response.message
-        );
+        // Check if the error is related to insufficient inventory
+        const errorMessage = response.message || response.error || '';
+        const isStockError = errorMessage.toLowerCase().includes('insufficient') && 
+                            errorMessage.toLowerCase().includes('inventory');
+        
+        if (isStockError) {
+          // Show custom alert for stock errors with option to navigate to inventory
+          const goToInventory = window.confirm(
+            `❌ Order Creation Failed\n\n` +
+            `${errorMessage}\n\n` +
+            `Would you like to go to the Inventory Stock page to update the stock?`
+          );
+          
+          if (goToInventory) {
+            navigate('/packing-inventory');
+          }
+        } else {
+          // Show regular alert for other errors
+          alert(
+            (orderId ? "Failed to update order: " : "Failed to create order: ") +
+            errorMessage
+          );
+        }
       }
     } catch (error) {
       console.error("Error saving order:", error);
 
-      alert(
-        (orderId ? "Error updating order: " : "Error creating order: ") +
-        error.message
-      );
+      // Check if the error is related to insufficient inventory
+      const errorMessage = error.message || error.error || String(error);
+      const isStockError = errorMessage.toLowerCase().includes('insufficient') && 
+                          errorMessage.toLowerCase().includes('inventory');
+      
+      if (isStockError) {
+        // Show custom alert for stock errors with option to navigate to inventory
+        const goToInventory = window.confirm(
+          `❌ Order Creation Failed\n\n` +
+          `${errorMessage}\n\n` +
+          `Would you like to go to the Inventory Stock page to update the stock?`
+        );
+        
+        if (goToInventory) {
+          navigate('/packing-inventory');
+        }
+      } else {
+        // Show regular alert for other errors
+        alert(
+          (orderId ? "Error updating order: " : "Error creating order: ") +
+          errorMessage
+        );
+      }
     } finally {
       setIsSubmitting(false);
     }

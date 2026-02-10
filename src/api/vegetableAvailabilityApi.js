@@ -18,6 +18,15 @@ export const getVegetableAvailabilityByFarmer = async (farmerId) => {
   }
 };
 
+export const getVegetableHistoryByFarmer = async (farmerId) => {
+  try {
+    const response = await api.get(`/vegetable-availability/farmer/${farmerId}/history`);
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || error.message;
+  }
+};
+
 export const updateVegetableAvailability = async (id, data) => {
   try {
     const response = await api.put(`/vegetable-availability/${id}`, data);
