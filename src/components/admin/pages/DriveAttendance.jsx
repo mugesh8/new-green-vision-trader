@@ -29,7 +29,6 @@ const parseTimeToHHMM = (str) => {
 const DriveAttendance = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('attendance');
-  const [selectedDate, setSelectedDate] = useState('Today, Nov 06 2025');
   const [filters, setFilters] = useState({
     status: 'All',
     deliveryType: 'All'
@@ -38,27 +37,27 @@ const DriveAttendance = () => {
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState([
-    { 
-      label: 'Total Registered', 
-      value: '48', 
+    {
+      label: 'Total Registered',
+      value: '48',
       color: 'bg-gradient-to-r from-[#D1FAE5] to-[#A7F3D0]',
       textColor: 'text-[#0D5C4D]'
     },
-    { 
-      label: 'Present', 
-      value: '32', 
+    {
+      label: 'Present',
+      value: '32',
       color: 'bg-gradient-to-r from-[#6EE7B7] to-[#34D399]',
       textColor: 'text-[#0D5C4D]'
     },
-    { 
-      label: 'Absent', 
-      value: '8', 
+    {
+      label: 'Absent',
+      value: '8',
       color: 'bg-gradient-to-r from-[#6EE7B7] to-[#34D399]',
       textColor: 'text-[#0D5C4D]'
     },
-    { 
-      label: 'Not Marked Yet', 
-      value: '8', 
+    {
+      label: 'Not Marked Yet',
+      value: '8',
       color: 'bg-gradient-to-r from-[#047857] to-[#065F46]',
       textColor: 'text-white'
     }
@@ -77,34 +76,34 @@ const DriveAttendance = () => {
         status: filters.status !== 'All' ? filters.status : undefined,
         delivery_type: filters.deliveryType !== 'All' ? filters.deliveryType : undefined
       };
-      
+
       const response = await getAttendanceOverview(params);
-      
+
       if (response.success) {
         const { drivers: driverData, stats: statsData } = response.data;
-        
+
         setStats([
-          { 
-            label: 'Total Registered', 
-            value: statsData.totalRegistered?.toString() || '0', 
+          {
+            label: 'Total Registered',
+            value: statsData.totalRegistered?.toString() || '0',
             color: 'bg-gradient-to-r from-[#D1FAE5] to-[#A7F3D0]',
             textColor: 'text-[#0D5C4D]'
           },
-          { 
-            label: 'Present', 
-            value: statsData.present?.toString() || '0', 
+          {
+            label: 'Present',
+            value: statsData.present?.toString() || '0',
             color: 'bg-gradient-to-r from-[#6EE7B7] to-[#34D399]',
             textColor: 'text-[#0D5C4D]'
           },
-          { 
-            label: 'Absent', 
-            value: statsData.absent?.toString() || '0', 
+          {
+            label: 'Absent',
+            value: statsData.absent?.toString() || '0',
             color: 'bg-gradient-to-r from-[#6EE7B7] to-[#34D399]',
             textColor: 'text-[#0D5C4D]'
           },
-          { 
-            label: 'Not Marked Yet', 
-            value: statsData.notMarked?.toString() || '0', 
+          {
+            label: 'Not Marked Yet',
+            value: statsData.notMarked?.toString() || '0',
             color: 'bg-gradient-to-r from-[#047857] to-[#065F46]',
             textColor: 'text-white'
           }
@@ -128,7 +127,7 @@ const DriveAttendance = () => {
           action: driver.check_out_time ? 'completed' : driver.check_in_time ? 'checkout' : 'markPresent',
           isPresent: driver.attendance_status === 'Present' && !driver.check_out_time
         }));
-        
+
         setDrivers(transformedDrivers);
       }
     } catch (error) {
@@ -223,8 +222,8 @@ const DriveAttendance = () => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     return driver.name.toLowerCase().includes(query) ||
-           driver.driverId.toLowerCase().includes(query) ||
-           driver.phone.toLowerCase().includes(query);
+      driver.driverId.toLowerCase().includes(query) ||
+      driver.phone.toLowerCase().includes(query);
   });
 
   return (
@@ -234,21 +233,19 @@ const DriveAttendance = () => {
       <div className="flex flex-wrap gap-2 mb-6">
         <button
           onClick={() => handleTabChange('driverList')}
-          className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${
-            activeTab === 'driverList'
-              ? 'bg-[#10B981] text-white'
-              : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
-          }`}
+          className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${activeTab === 'driverList'
+            ? 'bg-[#10B981] text-white'
+            : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
+            }`}
         >
           All Drivers
         </button>
         <button
           onClick={() => handleTabChange('attendance')}
-          className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${
-            activeTab === 'attendance'
-              ? 'bg-[#0D7C66] text-white'
-              : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
-          }`}
+          className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${activeTab === 'attendance'
+            ? 'bg-[#0D7C66] text-white'
+            : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
+            }`}
         >
           Attendance
         </button>
@@ -257,8 +254,8 @@ const DriveAttendance = () => {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6">
         {stats.map((stat, index) => (
-          <div 
-            key={index} 
+          <div
+            key={index}
             className={`${stat.color} rounded-2xl p-6 ${stat.textColor}`}
           >
             <div className="text-sm font-medium mb-2 opacity-90">{stat.label}</div>
@@ -285,7 +282,7 @@ const DriveAttendance = () => {
         <div className="relative">
           <select
             value={filters.status}
-            onChange={(e) => setFilters({...filters, status: e.target.value})}
+            onChange={(e) => setFilters({ ...filters, status: e.target.value })}
             className="appearance-none bg-white border border-[#D0E0DB] rounded-lg px-4 py-2.5 pr-10 text-sm text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] cursor-pointer min-w-[140px]"
           >
             <option value="All">Status: All</option>
@@ -299,7 +296,7 @@ const DriveAttendance = () => {
         <div className="relative">
           <select
             value={filters.deliveryType}
-            onChange={(e) => setFilters({...filters, deliveryType: e.target.value})}
+            onChange={(e) => setFilters({ ...filters, deliveryType: e.target.value })}
             className="appearance-none bg-white border border-[#D0E0DB] rounded-lg px-4 py-2.5 pr-10 text-sm text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] cursor-pointer min-w-[160px]"
           >
             <option value="All">Delivery Type: All</option>
@@ -310,12 +307,10 @@ const DriveAttendance = () => {
           <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#6B8782] pointer-events-none" size={16} />
         </div>
 
-        {/* Date Picker */}
-        <div className="relative">
-          <button className="bg-white border border-[#D0E0DB] rounded-lg px-4 py-2.5 text-sm text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] flex items-center gap-2 min-w-[180px]">
-            <Calendar size={16} className="text-red-500" />
-            {selectedDate}
-          </button>
+        {/* Date Display (Read Only) */}
+        <div className="bg-white border border-[#D0E0DB] rounded-lg px-4 py-2.5 text-sm text-[#0D5C4D] min-w-[140px] flex items-center gap-2">
+          <Calendar size={16} className="text-[#6B8782]" />
+          <span>{new Date().toLocaleDateString('en-GB')}</span>
         </div>
       </div>
 
@@ -347,11 +342,10 @@ const DriveAttendance = () => {
                   </td>
                 </tr>
               ) : filteredDrivers.map((driver, index) => (
-                <tr 
-                  key={driver.id} 
-                  className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${
-                    index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'
-                  }`}
+                <tr
+                  key={driver.id}
+                  className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'
+                    }`}
                 >
                   <td className="px-4 sm:px-6 py-4">
                     <div className="flex items-center gap-3">
@@ -436,33 +430,30 @@ const DriveAttendance = () => {
                       <button
                         onClick={() => handleAction('markPresent', driver.id)}
                         disabled={driver.status === 'Present' || driver.status === 'Absent' || !!driver.checkOut}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                          driver.status === 'Present' || driver.status === 'Absent' || !!driver.checkOut
-                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                            : 'bg-[#10B981] hover:bg-[#059669] text-white'
-                        }`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${driver.status === 'Present' || driver.status === 'Absent' || !!driver.checkOut
+                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                          : 'bg-[#10B981] hover:bg-[#059669] text-white'
+                          }`}
                       >
                         Present
                       </button>
                       <button
                         onClick={() => handleAction('checkout', driver.id)}
                         disabled={!driver.checkIn || driver.checkOut}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                          !driver.checkIn || driver.checkOut
-                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                            : 'bg-red-500 hover:bg-red-600 text-white'
-                        }`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${!driver.checkIn || driver.checkOut
+                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                          : 'bg-red-500 hover:bg-red-600 text-white'
+                          }`}
                       >
                         Checkout
                       </button>
                       <button
                         onClick={() => handleAction('markAbsent', driver.id)}
                         disabled={driver.status === 'Absent' || driver.isPresent || !!driver.checkOut}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                          driver.status === 'Absent' || driver.isPresent || !!driver.checkOut
-                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                            : 'bg-orange-500 hover:bg-orange-600 text-white'
-                        }`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${driver.status === 'Absent' || driver.isPresent || !!driver.checkOut
+                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                          : 'bg-orange-500 hover:bg-orange-600 text-white'
+                          }`}
                       >
                         Absent
                       </button>

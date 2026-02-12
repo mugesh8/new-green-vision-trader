@@ -53,7 +53,7 @@ const LabourAttendance = () => {
       const attendanceRes = await getAllAttendance({ date: selectedDate, status: filters.status });
 
       setStats(attendanceRes.data.stats);
-      
+
       const mergedData = attendanceRes.data.labours.map(labour => ({
         id: labour.lid,
         name: labour.full_name,
@@ -160,7 +160,7 @@ const LabourAttendance = () => {
   };
 
   const getStatusColor = (status) => {
-    switch(status) {
+    switch (status) {
       case 'Present': return 'bg-[#10B981]';
       case 'Absent': return 'bg-red-500';
       case 'Half Day': return 'bg-orange-500';
@@ -168,7 +168,7 @@ const LabourAttendance = () => {
     }
   };
 
-  const filteredLabours = labours.filter(labour => 
+  const filteredLabours = labours.filter(labour =>
     labour.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     labour.labourId.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -180,41 +180,37 @@ const LabourAttendance = () => {
       <div className="flex flex-wrap gap-2 mb-6">
         <button
           onClick={() => handleTabChange('labourList')}
-          className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${
-            activeTab === 'labourList'
+          className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${activeTab === 'labourList'
               ? 'bg-[#10B981] text-white'
               : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
-          }`}
+            }`}
         >
           Labour List
         </button>
         <button
           onClick={() => handleTabChange('attendance')}
-          className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${
-            activeTab === 'attendance'
+          className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${activeTab === 'attendance'
               ? 'bg-[#0D7C66] text-white'
               : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
-          }`}
+            }`}
         >
           Attendance
         </button>
         <button
           onClick={() => handleTabChange('excessPay')}
-          className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${
-            activeTab === 'excessPay'
+          className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${activeTab === 'excessPay'
               ? 'bg-[#10B981] text-white'
               : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
-          }`}
+            }`}
         >
           Excess Pay
         </button>
         <button
           onClick={() => handleTabChange('dailyPayout')}
-          className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${
-            activeTab === 'dailyPayout'
+          className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${activeTab === 'dailyPayout'
               ? 'bg-[#10B981] text-white'
               : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
-          }`}
+            }`}
         >
           Labour Daily Payout
         </button>
@@ -258,7 +254,7 @@ const LabourAttendance = () => {
         <div className="relative">
           <select
             value={filters.status}
-            onChange={(e) => setFilters({...filters, status: e.target.value})}
+            onChange={(e) => setFilters({ ...filters, status: e.target.value })}
             className="appearance-none bg-white border border-[#D0E0DB] rounded-lg px-4 py-2.5 pr-10 text-sm text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] cursor-pointer min-w-[140px]"
           >
             <option value="All">Status: All</option>
@@ -268,14 +264,10 @@ const LabourAttendance = () => {
           <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#6B8782] pointer-events-none" size={16} />
         </div>
 
-        {/* Date Picker */}
-        <div className="relative">
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="bg-white border border-[#D0E0DB] rounded-lg px-4 py-2.5 text-sm text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] min-w-[180px]"
-          />
+        {/* Date Display (Read Only) */}
+        <div className="bg-white border border-[#D0E0DB] rounded-lg px-4 py-2.5 text-sm text-[#0D5C4D] min-w-[140px] flex items-center gap-2">
+          <Calendar size={16} className="text-[#6B8782]" />
+          <span>{new Date().toLocaleDateString('en-GB')}</span>
         </div>
       </div>
 
@@ -306,11 +298,10 @@ const LabourAttendance = () => {
                   </td>
                 </tr>
               ) : filteredLabours.map((labour, index) => (
-                <tr 
-                  key={labour.id} 
-                  className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${
-                    index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'
-                  }`}
+                <tr
+                  key={labour.id}
+                  className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'
+                    }`}
                 >
                   <td className="px-4 sm:px-6 py-4">
                     <div className="flex items-center gap-3">
@@ -378,33 +369,30 @@ const LabourAttendance = () => {
                       <button
                         onClick={() => handleAction('markPresent', labour.id)}
                         disabled={labour.status === 'Present' || labour.status === 'Absent' || !!labour.checkOut}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                          labour.status === 'Present' || labour.status === 'Absent' || !!labour.checkOut
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${labour.status === 'Present' || labour.status === 'Absent' || !!labour.checkOut
                             ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                             : 'bg-[#10B981] hover:bg-[#059669] text-white'
-                        }`}
+                          }`}
                       >
                         Present
                       </button>
                       <button
                         onClick={() => handleAction('checkout', labour.id)}
                         disabled={!labour.checkIn || labour.checkOut}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                          !labour.checkIn || labour.checkOut
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${!labour.checkIn || labour.checkOut
                             ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                             : 'bg-red-500 hover:bg-red-600 text-white'
-                        }`}
+                          }`}
                       >
                         Checkout
                       </button>
                       <button
                         onClick={() => handleAction('markAbsent', labour.id)}
                         disabled={labour.status === 'Absent' || labour.status === 'Present' || !!labour.checkOut}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                          labour.status === 'Absent' || labour.status === 'Present' || !!labour.checkOut
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${labour.status === 'Absent' || labour.status === 'Present' || !!labour.checkOut
                             ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                             : 'bg-orange-500 hover:bg-orange-600 text-white'
-                        }`}
+                          }`}
                       >
                         Absent
                       </button>
