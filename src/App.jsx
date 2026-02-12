@@ -38,6 +38,7 @@ import EditDriver from './components/admin/pages/EditDriver'
 import DriverDetails from './components/admin/pages/DriverDetails'
 import DriverAirportDelivery from './components/admin/pages/DriverAirportDelivery'
 import DriverLocalPickups from './components/admin/pages/DriverLocalPickups'
+import DriverFlowerOrder from './components/admin/pages/DriverFlowerOrder'
 import AddFuelExpenses from './components/admin/pages/AddFuelExpenses'
 import AddExcessKM from './components/admin/pages/AddExcessKM'
 import AddAdvancePay from './components/admin/pages/AddAdvancePay'
@@ -517,6 +518,18 @@ const App = () => {
               <Layout>
                 <RequirePermission module="Drivers" action="boxorder">
                   <DriverAirportDelivery />
+                </RequirePermission>
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/drivers/:id/flower-orders"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <RequirePermission module="Drivers" action="flowerorder">
+                  <DriverFlowerOrder />
                 </RequirePermission>
               </Layout>
             </ProtectedRoute>

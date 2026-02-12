@@ -115,6 +115,12 @@ const DriverDetailsPage = () => {
             BOX ORDER
           </button>
           <button
+            onClick={() => navigate(`/drivers/${id}/flower-orders`)}
+            className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm bg-white text-gray-600 hover:bg-gray-50 border border-gray-200 whitespace-nowrap"
+          >
+            FLOWER ORDER
+          </button>
+          <button
             onClick={() => navigate('/fuel-expense-management', { state: { driverId: id } })}
             className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm bg-white text-gray-600 hover:bg-gray-50 border border-gray-200 whitespace-nowrap"
           >

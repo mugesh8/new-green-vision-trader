@@ -392,6 +392,7 @@ const OrderAssignCreateStage1 = () => {
                 row.assignedBoxes = parseInt(firstAssignment.assignedBoxes) || 0;
                 row.price = parseFloat(firstAssignment.price) || 0;
                 row.place = firstAssignment.place || '';
+                row.addressInfo = firstAssignment.address || '';
 
                 // Find entity and set name using freshly fetched data
                 let entity = null;
@@ -458,7 +459,8 @@ const OrderAssignCreateStage1 = () => {
                       price: parseFloat(assignment.price) || 0,
                       marketPrice: row.marketPrice,
                       tapeColor: assignment.tapeColor || entity?.tape_color || '',
-                      place: assignment.place || ''
+                      place: assignment.place || '',
+                      addressInfo: assignment.address || ''
                     };
 
                     // Create delivery route for remaining assignment
@@ -648,7 +650,8 @@ const OrderAssignCreateStage1 = () => {
       // Merge main assignments and remaining assignments
       const mergedAssignments = productRows.map(row => ({
         ...row,
-        entityId: getEntityId(row.entityType, row.assignedTo)
+        entityId: getEntityId(row.entityType, row.assignedTo),
+        address: row.addressInfo || ''
       }));
 
       Object.entries(remainingRowAssignments).forEach(([key, remainingData]) => {
@@ -667,7 +670,8 @@ const OrderAssignCreateStage1 = () => {
               assignedBoxes: remainingData.assignedBoxes || 0,
               price: remainingData.price || 0,
               tapeColor: remainingData.tapeColor || '',
-              place: remainingData.place || ''
+              place: remainingData.place || '',
+              address: remainingData.addressInfo || ''
             });
           }
         }
@@ -978,7 +982,7 @@ const OrderAssignCreateStage1 = () => {
                     {!isBoxBasedOrder && <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Quantity Needed</th>}
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Entity Type <span className="text-red-500">*</span></th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Name <span className="text-red-500">*</span></th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Place</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Address</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Entity Stock</th>
                     {isBoxBasedOrder && <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Picked No of Boxes/Bags</th>}
                     {!isBoxBasedOrder && <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Picked Qty</th>}
@@ -1064,13 +1068,23 @@ const OrderAssignCreateStage1 = () => {
                         onChange={(e) => {
                           const selectedEntityName = e.target.value;
                           let selectedEntity = null;
+                          let addressInfo = '';
 
                           if (row.entityType === 'farmer') {
                             selectedEntity = assignmentOptions.farmers.find(f => f.farmer_name === selectedEntityName);
+                            if (selectedEntity) {
+                              addressInfo = `${selectedEntity.address || ''}, ${selectedEntity.city || ''}, ${selectedEntity.state || ''} - ${selectedEntity.pin_code || ''}`;
+                            }
                           } else if (row.entityType === 'supplier') {
                             selectedEntity = assignmentOptions.suppliers.find(s => s.supplier_name === selectedEntityName);
+                            if (selectedEntity) {
+                              addressInfo = `${selectedEntity.address || ''}, ${selectedEntity.city || ''}, ${selectedEntity.state || ''} - ${selectedEntity.pin_code || ''}`;
+                            }
                           } else if (row.entityType === 'thirdParty') {
                             selectedEntity = assignmentOptions.thirdParties.find(tp => tp.third_party_name === selectedEntityName);
+                            if (selectedEntity) {
+                              addressInfo = `${selectedEntity.address || ''}, ${selectedEntity.city || ''}, ${selectedEntity.state || ''} - ${selectedEntity.pin_code || ''}`;
+                            }
                           }
 
                           if (row.isRemaining) {
@@ -1080,7 +1094,8 @@ const OrderAssignCreateStage1 = () => {
                               [row.id]: {
                                 ...prev[row.id],
                                 assignedTo: selectedEntityName,
-                                tapeColor: selectedEntity?.tape_color || ''
+                                tapeColor: selectedEntity?.tape_color || '',
+                                addressInfo: addressInfo
                               }
                             }));
 
@@ -1095,6 +1110,7 @@ const OrderAssignCreateStage1 = () => {
                             const targetIndex = row.displayIndex;
                             updatedRows[targetIndex].assignedTo = selectedEntityName;
                             updatedRows[targetIndex].tapeColor = selectedEntity?.tape_color || '';
+                            updatedRows[targetIndex].addressInfo = addressInfo;
                             setProductRows(updatedRows);
 
                             if (selectedEntity && (updatedRows[targetIndex].assignedQty > 0 || updatedRows[targetIndex].assignedBoxes > 0)) {
@@ -1120,30 +1136,12 @@ const OrderAssignCreateStage1 = () => {
                       </select>
                     </td>
                     <td className="px-4 py-4">
-                      <select
-                        ref={(el) => {
-                          if (el) inputGridRefs.current[`${index}-2`] = el;
-                        }}
-                        onKeyDown={(e) => handleKeyDown(e, index, 2, displayRows.length)}
-                        className="min-w-[140px] w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-                        value={row.place || ''}
-                        onChange={(e) => {
-                          if (row.isRemaining) {
-                            setRemainingRowAssignments(prev => ({
-                              ...prev,
-                              [row.id]: { ...prev[row.id], place: e.target.value }
-                            }));
-                          } else {
-                            const updatedRows = [...productRows];
-                            updatedRows[row.displayIndex].place = e.target.value;
-                            setProductRows(updatedRows);
-                          }
-                        }}
-                      >
-                        <option value="">Select place...</option>
-                        <option value="Farmer place">Farmer place</option>
-                        <option value="Own place">Own place</option>
-                      </select>
+                      <div className="text-sm text-gray-600">
+                        {row.isRemaining 
+                          ? (remainingRowAssignments[row.id]?.addressInfo || '-')
+                          : (row.addressInfo || '-')
+                        }
+                      </div>
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex items-center gap-2">
@@ -1355,13 +1353,23 @@ const OrderAssignCreateStage1 = () => {
                       onChange={(e) => {
                         const selectedEntityName = e.target.value;
                         let selectedEntity = null;
+                        let addressInfo = '';
 
                         if (row.entityType === 'farmer') {
                           selectedEntity = assignmentOptions.farmers.find(f => f.farmer_name === selectedEntityName);
+                          if (selectedEntity) {
+                            addressInfo = `${selectedEntity.address || ''}, ${selectedEntity.city || ''}, ${selectedEntity.state || ''} - ${selectedEntity.pin_code || ''}`;
+                          }
                         } else if (row.entityType === 'supplier') {
                           selectedEntity = assignmentOptions.suppliers.find(s => s.supplier_name === selectedEntityName);
+                          if (selectedEntity) {
+                            addressInfo = `${selectedEntity.address || ''}, ${selectedEntity.city || ''}, ${selectedEntity.state || ''} - ${selectedEntity.pin_code || ''}`;
+                          }
                         } else if (row.entityType === 'thirdParty') {
                           selectedEntity = assignmentOptions.thirdParties.find(tp => tp.third_party_name === selectedEntityName);
+                          if (selectedEntity) {
+                            addressInfo = `${selectedEntity.address || ''}, ${selectedEntity.city || ''}, ${selectedEntity.state || ''} - ${selectedEntity.pin_code || ''}`;
+                          }
                         }
 
                         if (row.isRemaining) {
@@ -1371,7 +1379,8 @@ const OrderAssignCreateStage1 = () => {
                             [row.id]: {
                               ...prev[row.id],
                               assignedTo: selectedEntityName,
-                              tapeColor: selectedEntity?.tape_color || ''
+                              tapeColor: selectedEntity?.tape_color || '',
+                              addressInfo: addressInfo
                             }
                           }));
 
@@ -1386,6 +1395,7 @@ const OrderAssignCreateStage1 = () => {
                           const targetIndex = row.displayIndex;
                           updatedRows[targetIndex].assignedTo = selectedEntityName;
                           updatedRows[targetIndex].tapeColor = selectedEntity?.tape_color || '';
+                          updatedRows[targetIndex].addressInfo = addressInfo;
                           setProductRows(updatedRows);
 
                           if (selectedEntity && updatedRows[targetIndex].assignedQty > 0) {
@@ -1412,27 +1422,13 @@ const OrderAssignCreateStage1 = () => {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">Place</label>
-                    <select
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-                      value={row.place || ''}
-                      onChange={(e) => {
-                        if (row.isRemaining) {
-                          setRemainingRowAssignments(prev => ({
-                            ...prev,
-                            [row.id]: { ...prev[row.id], place: e.target.value }
-                          }));
-                        } else {
-                          const updatedRows = [...productRows];
-                          updatedRows[row.displayIndex].place = e.target.value;
-                          setProductRows(updatedRows);
-                        }
-                      }}
-                    >
-                      <option value="">Select place...</option>
-                      <option value="Farmer place">Farmer place</option>
-                      <option value="Own place">Own place</option>
-                    </select>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Address</label>
+                    <div className="text-sm text-gray-600 p-2 bg-gray-50 rounded-lg">
+                      {row.isRemaining 
+                        ? (remainingRowAssignments[row.id]?.addressInfo || '-')
+                        : (row.addressInfo || '-')
+                      }
+                    </div>
                   </div>
 
                   <div>

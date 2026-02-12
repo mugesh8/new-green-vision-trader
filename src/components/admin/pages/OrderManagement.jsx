@@ -763,13 +763,6 @@ const OrderManagement = () => {
                 View
               </button>
               <button
-                onClick={() => navigate(`/preorders/${openDropdown}`)}
-                className="w-full text-left px-4 py-2 text-sm text-[#0D5C4D] hover:bg-[#F0F4F3] transition-colors flex items-center gap-2"
-              >
-                <Eye size={14} />
-                Pre Order
-              </button>
-              <button
                 onClick={() => {
                   const displayOrders = filteredOrders.length > 0 ? filteredOrders : orders;
                   const order = displayOrders.find(o => o.id === openDropdown);
