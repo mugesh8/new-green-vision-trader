@@ -836,6 +836,18 @@ const App = () => {
           }
         />
         <Route
+          path="/labour/daily-payout"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <RequirePermission module="Labour" action="dailypayout">
+                  <LabourDailyPayout />
+                </RequirePermission>
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/labour/:id/daily-payout"
           element={
             <ProtectedRoute>

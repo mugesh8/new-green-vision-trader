@@ -702,7 +702,8 @@ const OrderAssignCreateStage1 = () => {
           );
           return {
             driver: group.driver,
-            driverId: driverInfo?.did ?? null,
+            did: driverInfo?.did ?? null,
+            driverId: driverInfo?.driver_id ?? null,
             totalWeight: parseFloat(group.assignments.reduce((sum, a) => sum + parseFloat(a.quantity), 0).toFixed(2)),
             assignments: group.assignments.map(a => {
             const status = assignmentStatuses[a.routeId] || 'pending';

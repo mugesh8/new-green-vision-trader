@@ -35,10 +35,6 @@ const LabourDailyPayout = () => {
   const [markingPaid, setMarkingPaid] = useState(false);
 
   useEffect(() => {
-    if (!labourId) {
-      navigate('/labour', { replace: true });
-      return;
-    }
     fetchLabourDailyPayouts();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch when labourId is set
   }, [labourId]);
@@ -349,7 +345,7 @@ const LabourDailyPayout = () => {
             Labour Daily Payout{labourName ? ` – ${labourName}` : ''}
           </h1>
           <p className="text-gray-600 mt-1">
-            {labourId ? `Daily payout for this labour` : 'Manage daily payouts for labour'}
+            {labourId ? `Daily payout for this labour` : 'Manage daily payouts for all labour'}
           </p>
         </div>
 

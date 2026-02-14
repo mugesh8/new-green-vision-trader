@@ -905,7 +905,8 @@ const FlowerOrderAssignStage3 = () => {
 
         return {
           driver: driverKey,
-          driverId: data.driverInfo?.did || null,
+          did: data.driverInfo?.did || null,
+          driverId: data.driverInfo?.driver_id || null,
           vehicleNumber: data.driverInfo?.vehicle_number || '',
           phoneNumber: data.driverInfo?.phone_number || '',
           totalPackages,

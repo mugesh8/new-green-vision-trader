@@ -414,6 +414,12 @@ const LabourManagement = () => {
           >
             Excess Pay
           </button>
+          <button
+            onClick={() => navigate('/labour/daily-payout')}
+            className="px-6 py-2.5 rounded-lg font-medium text-sm transition-colors bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]"
+          >
+            Labour Daily Payout
+          </button>
         </div>
 
         <div className="flex gap-3">

@@ -262,16 +262,36 @@ const OrderAssignManagement = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-3 py-1.5 rounded-full text-xs font-medium ${{
-                      'pending': 'bg-purple-100 text-purple-700',
-                      'confirmed': 'bg-emerald-100 text-emerald-700',
-                      'processing': 'bg-yellow-100 text-yellow-700',
-                      'shipped': 'bg-blue-100 text-blue-700',
-                      'delivered': 'bg-emerald-600 text-white',
-                      'cancelled': 'bg-red-100 text-red-700'
-                    }[order.order_status] || 'bg-gray-100 text-gray-700'}`}>
-                      {order.order_status.charAt(0).toUpperCase() + order.order_status.slice(1)}
-                    </span>
+                    {(() => {
+                      const isLocalOrder = order.order_type === 'local' || order.order_type === 'LOCAL GRADE ORDER';
+                      const assignment = assignments[order.oid];
+                      const allStagesCompleted = !isLocalOrder && assignment && 
+                        assignment.stage1_status === 'completed' &&
+                        assignment.stage2_status === 'completed' &&
+                        assignment.stage3_status === 'completed' &&
+                        assignment.stage4_status === 'completed';
+
+                      if (allStagesCompleted) {
+                        return (
+                          <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-600 text-white">
+                            Completed
+                          </span>
+                        );
+                      }
+
+                      return (
+                        <span className={`px-3 py-1.5 rounded-full text-xs font-medium ${{
+                          'pending': 'bg-purple-100 text-purple-700',
+                          'confirmed': 'bg-emerald-100 text-emerald-700',
+                          'processing': 'bg-yellow-100 text-yellow-700',
+                          'shipped': 'bg-blue-100 text-blue-700',
+                          'delivered': 'bg-emerald-600 text-white',
+                          'cancelled': 'bg-red-100 text-red-700'
+                        }[order.order_status] || 'bg-gray-100 text-gray-700'}`}>
+                          {order.order_status.charAt(0).toUpperCase() + order.order_status.slice(1)}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {(() => {
@@ -280,6 +300,13 @@ const OrderAssignManagement = () => {
                       const isFlowerOrder = order.order_type === 'flower' || order.order_type === 'FLOWER ORDER';
                       const assignment = assignments[order.oid];
                       const isStage1Completed = assignment?.stage1_status === 'completed';
+
+                      // Check if all 4 stages are completed
+                      const allStagesCompleted = !isLocalOrder && assignment && 
+                        assignment.stage1_status === 'completed' &&
+                        assignment.stage2_status === 'completed' &&
+                        assignment.stage3_status === 'completed' &&
+                        assignment.stage4_status === 'completed';
 
                       // For local orders, check if local order data actually exists
                       const localOrderData = localOrders[order.oid];
@@ -309,7 +336,13 @@ const OrderAssignManagement = () => {
 
                       const assignNav = getAssignPath(shouldShowEdit);
 
-                      if (shouldShowEdit) {
+                      if (allStagesCompleted) {
+                        return (
+                          <span className="px-4 py-2 bg-emerald-100 text-emerald-700 text-sm font-semibold rounded-lg">
+                            Completed
+                          </span>
+                        );
+                      } else if (shouldShowEdit) {
                         return (
                           <button
                             onClick={() => navigate(assignNav.path, { state: assignNav.state })}
