@@ -314,10 +314,6 @@ const OrderAssignCreateStage3 = () => {
 
           // Parse stage3_data to get saved stage3 data
           if (assignmentData.stage3_data) {
-            // If we already have stage3 data saved for this order,
-            // switch the screen into "edit" mode so that backend
-            // can treat subsequent saves as updates instead of
-            // re‑deducting tape quantities or stock.
             setIsEdit(true);
             try {
               const stage3Data = typeof assignmentData.stage3_data === 'string'
@@ -325,7 +321,7 @@ const OrderAssignCreateStage3 = () => {
                 : assignmentData.stage3_data;
               stage3Products = stage3Data.products || [];
 
-              // Load airport tape data: prefer from airportGroups (tapes array or single tape), then airportTapeData
+              // Load airport tape data
               const tapeFromGroups = {};
               const ag = stage3Data.summaryData?.airportGroups || stage3Data.airportGroups || {};
               Object.values(ag).forEach((g) => {
@@ -351,6 +347,34 @@ const OrderAssignCreateStage3 = () => {
               }
             } catch (e) {
               console.error('Error parsing stage3_data:', e);
+            }
+          }
+
+          // Parse stage3_summary_data to get status updates
+          if (assignmentData.stage3_summary_data) {
+            try {
+              const stage3SummaryData = typeof assignmentData.stage3_summary_data === 'string'
+                ? JSON.parse(assignmentData.stage3_summary_data)
+                : assignmentData.stage3_summary_data;
+
+              const driverAssignments = stage3SummaryData.driverAssignments || [];
+              driverAssignments.forEach(driverGroup => {
+                const assignments = driverGroup.assignments || [];
+                assignments.forEach(assignment => {
+                  const oiid = assignment.oiid;
+                  let status = assignment.status;
+                  if (oiid && status && stage3Products.length > 0) {
+                    // Normalize status: "On Trip" -> "ontrip", "Completed" -> "completed"
+                    status = status.toLowerCase().replace(/\s+/g, '');
+                    const productIndex = stage3Products.findIndex(p => p.oiid === oiid && p.ct === assignment.ct);
+                    if (productIndex !== -1) {
+                      stage3Products[productIndex].status = status;
+                    }
+                  }
+                });
+              });
+            } catch (e) {
+              console.error('Error parsing stage3_summary_data:', e);
             }
           }
         } catch (error) {

@@ -122,7 +122,8 @@ const StockManagement = () => {
     pricePerUnit: '',
     gst: '',
     totalWithGst: 0,
-    inventoryId: ''
+    inventoryId: '',
+    date: ''
   });
 
   // Refs for keyboard navigation in Market Price Entry table
@@ -717,7 +718,8 @@ const StockManagement = () => {
         quantity: parseFloat(inventoryForm.quantity),
         price_per_unit: parseFloat(inventoryForm.pricePerUnit),
         gst_percentage: parseFloat(inventoryForm.gst),
-        inventory_id: parseInt(inventoryForm.inventoryId)
+        inventory_id: parseInt(inventoryForm.inventoryId),
+        date: inventoryForm.date || null
       };
 
       if (editingInventory) {
@@ -748,7 +750,8 @@ const StockManagement = () => {
         pricePerUnit: '',
         gst: '',
         totalWithGst: 0,
-        inventoryId: ''
+        inventoryId: '',
+        date: ''
       });
       alert('Inventory stock saved successfully!');
     } catch (error) {
@@ -768,7 +771,8 @@ const StockManagement = () => {
       pricePerUnit: item.price_per_unit,
       gst: item.gst_percentage,
       totalWithGst: item.total_with_gst,
-      inventoryId: item.inventory_id
+      inventoryId: item.inventory_id,
+      date: item.date || ''
     });
     setEditingInventory(item.id);
     setShowInventoryForm(true);
@@ -1723,6 +1727,7 @@ const StockManagement = () => {
                   <table className="w-full">
                     <thead>
                       <tr className="bg-[#D4F4E8]">
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Date</th>
                         <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Invoice No</th>
                         <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Company Name</th>
                         <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Item</th>
@@ -1737,13 +1742,14 @@ const StockManagement = () => {
                     <tbody>
                       {inventoryData.length === 0 ? (
                         <tr>
-                          <td colSpan="9" className="px-6 py-8 text-center text-[#6B8782]">
+                          <td colSpan="10" className="px-6 py-8 text-center text-[#6B8782]">
                             No inventory records available
                           </td>
                         </tr>
                       ) : (
                         inventoryPaginatedData.map((item, index) => (
                           <tr key={item.id} className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'}`}>
+                            <td className="px-6 py-4 text-sm text-[#6B8782]">{item.date ? new Date(item.date).toLocaleDateString() : 'N/A'}</td>
                             <td className="px-6 py-4 text-sm font-medium text-[#0D5C4D]">{item.invoice_no}</td>
                             <td className="px-6 py-4 text-sm text-[#0D5C4D]">{item.company_name}</td>
                             <td className="px-6 py-4 text-sm text-[#0D5C4D]">{item.item_name}</td>
@@ -1878,7 +1884,8 @@ const StockManagement = () => {
                       pricePerUnit: '',
                       gst: '',
                       totalWithGst: 0,
-                      inventoryId: ''
+                      inventoryId: '',
+                      date: ''
                     });
                   }}
                   className="px-4 py-2 border border-[#D0E0DB] text-[#6B8782] rounded-lg font-medium hover:bg-[#F0F4F3] transition-colors"
@@ -1888,6 +1895,15 @@ const StockManagement = () => {
               </div>
               <form onSubmit={handleInventorySubmit} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">Date</label>
+                    <input
+                      type="date"
+                      value={inventoryForm.date}
+                      onChange={(e) => handleInventoryFormChange('date', e.target.value)}
+                      className="w-full px-4 py-3 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+                    />
+                  </div>
                   <div>
                     <label className="block text-sm font-semibold text-[#0D5C4D] mb-2">Invoice No</label>
                     <input
@@ -2013,7 +2029,8 @@ const StockManagement = () => {
                       pricePerUnit: '',
                       gst: '',
                       totalWithGst: 0,
-                      inventoryId: ''
+                      inventoryId: '',
+                      date: ''
                     })}
                     className="px-6 py-3 border border-[#D0E0DB] text-[#6B8782] rounded-xl font-semibold hover:bg-[#F0F4F3] transition-colors"
                   >

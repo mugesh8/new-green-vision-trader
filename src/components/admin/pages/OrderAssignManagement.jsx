@@ -21,7 +21,11 @@ const OrderAssignManagement = () => {
     try {
       setLoading(true);
       const response = await getAllOrders();
-      const ordersData = response.data || [];
+      const ordersData = (response.data || []).sort((a, b) => {
+        const dateA = new Date(a.order_received_date || 0);
+        const dateB = new Date(b.order_received_date || 0);
+        return dateB - dateA;
+      });
       setOrders(ordersData);
 
       // Fetch assignment data for each order

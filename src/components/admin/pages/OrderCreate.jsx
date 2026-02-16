@@ -35,7 +35,8 @@ const NewOrder = () => {
       boxWeight: '',
       boxCapacity: '',
       showMoreDetails: false,
-      allowedPackingTypes: [] // Store product-specific packing types
+      allowedPackingTypes: [],
+      error: '' // Add error field for each product
     },
   ]);
 
@@ -639,6 +640,14 @@ const NewOrder = () => {
             if (matchingProduct) {
               updatedProduct.productId = matchingProduct.pid.toString();
               updatedProduct.productName = matchingProduct.product_name;
+              updatedProduct.error = '';
+            } else {
+              updatedProduct.productId = '';
+              if (value.trim() !== '') {
+                updatedProduct.error = 'Please select a product from the dropdown list';
+              } else {
+                updatedProduct.error = '';
+              }
             }
 
             if (value.length > 0) {
@@ -800,7 +809,8 @@ const NewOrder = () => {
             productName: product.product_name,
             allowedPackingTypes: allowedPackingTypes,
             packingType: defaultPackingType,
-            boxWeight: defaultBoxWeight ? defaultBoxWeight.toFixed(2) : ''
+            boxWeight: defaultBoxWeight ? defaultBoxWeight.toFixed(2) : '',
+            error: ''
           };
           
           // If we have a default packing type, calculate box capacity and weights
@@ -874,6 +884,12 @@ const NewOrder = () => {
 
     if (!formData.customerName.trim()) {
       newErrors.customerName = 'Customer name is required';
+    }
+
+    const productsWithErrors = products.filter(product => product.error);
+    if (productsWithErrors.length > 0) {
+      alert('Please select valid products from the dropdown list. Invalid product names are not allowed.');
+      return false;
     }
 
     const invalidProducts = products.filter(product => {
@@ -1392,6 +1408,9 @@ const NewOrder = () => {
                               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent"
                             />
                           </div>
+                          {product.error && (
+                            <p className="mt-1 text-xs text-red-500">{product.error}</p>
+                          )}
                           {showProductSuggestions[product.id] && allProducts.length > 0 && suggestionPosition[product.id] && createPortal(
                             <div
                               ref={productSuggestionsRef}
@@ -1407,11 +1426,18 @@ const NewOrder = () => {
                             >
                               {allProducts
                                 .filter(prod => {
+                                  const searchValue = (productSuggestionValue[product.id] || '').toLowerCase();
+                                  const productName = (prod.product_name || '').toLowerCase();
+                                  
                                   // Filter out products that are already selected in other rows
                                   const selectedProductIds = products
-                                    .filter(p => p.id !== product.id && p.productId) // Exclude current row and empty selections
+                                    .filter(p => p.id !== product.id && p.productId)
                                     .map(p => p.productId.toString());
-                                  return !selectedProductIds.includes(prod.pid.toString());
+                                  
+                                  const isNotSelected = !selectedProductIds.includes(prod.pid.toString());
+                                  const matchesSearch = productName.includes(searchValue);
+                                  
+                                  return isNotSelected && matchesSearch;
                                 })
                                 .map((prod) => (
                                 <button
