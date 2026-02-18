@@ -9,7 +9,7 @@ const AddVendorForm = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     vendor_name: '',
-    registration_number: '',
+    place: '',
     address: '',
     city: '',
     state: '',
@@ -94,45 +94,18 @@ const AddVendorForm = () => {
           return 'Vendor type must be farmer, supplier, or thirdparty';
         }
         break;
-      case 'registration_number':
-        if (!value || value.trim().length < 3) {
-          return 'Registration number is required and must be at least 3 characters long';
+      case 'place':
+        if (!value || value.trim().length < 2) {
+          return 'Place is required and must be at least 2 characters long';
         }
         break;
       case 'phone':
         if (!value) {
           return 'Phone number is required';
         }
-        // More flexible phone number validation
-        // Allow both +91XXXXXXXXXX and XXXXXXXXXX formats
-        const phoneRegex = /^(\+91)?[6-9]\d{9}$/;
-        if (!phoneRegex.test(value.replace(/\s/g, ''))) {
-          return 'Please provide a valid Indian phone number';
-        }
-        break;
-      case 'address':
-        if (!value || value.trim().length === 0) {
-          return 'Address is required';
-        }
-        break;
-      case 'city':
-        if (!value || value.trim().length === 0) {
-          return 'City is required';
-        }
-        break;
-      case 'state':
-        if (!value || value.trim().length === 0) {
-          return 'State is required';
-        }
-        break;
-      case 'pin_code':
-        if (!value) {
-          return 'Pin code is required';
-        }
-        // Indian pin code validation (6 digits)
-        const pinCodeRegex = /^\d{6}$/;
-        if (!pinCodeRegex.test(value)) {
-          return 'Please provide a valid 6-digit pin code';
+        const phoneRegex = /^(\+91\s?)?[6-9]\d{4}\s?\d{5}$/;
+        if (!phoneRegex.test(value)) {
+          return 'Phone must be 10 digits starting with 6-9 (+91 optional, spaces allowed)';
         }
         break;
       default:
@@ -144,8 +117,7 @@ const AddVendorForm = () => {
   const validateForm = () => {
     const errors = {};
     const requiredFields = [
-      'vendor_name', 'vendor_type', 'registration_number', 
-      'phone', 'address', 'city', 'state', 'pin_code'
+      'vendor_name', 'vendor_type', 'place', 'phone'
     ];
     
     // Validate all required fields
@@ -178,12 +150,12 @@ const AddVendorForm = () => {
       const vendorData = {
         vendor_name: formData.vendor_name.trim(),
         vendor_type: formData.vendor_type,
-        registration_number: formData.registration_number.trim(),
-        phone: formData.phone.replace(/\s/g, '').replace('+91', ''), // Remove +91 prefix and spaces
-        address: formData.address.trim(),
-        city: formData.city.trim(),
-        state: formData.state.trim(),
-        pin_code: formData.pin_code.trim(),
+        place: formData.place.trim(),
+        phone: formData.phone.replace(/\s/g, ''),
+        address: formData.address ? formData.address.trim() : null,
+        city: formData.city ? formData.city.trim() : null,
+        state: formData.state ? formData.state.trim() : null,
+        pin_code: formData.pin_code ? formData.pin_code.trim() : null,
         // Optional fields
         contact_person: formData.contact_person ? formData.contact_person.trim() : null,
         tape_color: formData.tape_color ? formData.tape_color.trim() : null,
@@ -327,24 +299,24 @@ const AddVendorForm = () => {
                   )}
                 </div>
 
-                {/* Registration Number */}
+                {/* Place */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Registration Number <span className="text-red-500">*</span>
+                    Place <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
-                    name="registration_number"
-                    placeholder="UST/CTN Number"
-                    value={formData.registration_number}
+                    name="place"
+                    placeholder="Enter Place"
+                    value={formData.place}
                     onChange={handleInputChange}
                     className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm ${
-                      formErrors.registration_number ? 'border-red-500' : 'border-gray-200'
+                      formErrors.place ? 'border-red-500' : 'border-gray-200'
                     }`}
                     required
                   />
-                  {formErrors.registration_number && (
-                    <p className="mt-1 text-sm text-red-600">{formErrors.registration_number}</p>
+                  {formErrors.place && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.place}</p>
                   )}
                 </div>
                   
@@ -375,7 +347,7 @@ const AddVendorForm = () => {
                 {/* Address */}
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Address <span className="text-red-500">*</span>
+                    Address
                   </label>
                   <textarea
                     name="address"
@@ -383,20 +355,14 @@ const AddVendorForm = () => {
                     value={formData.address}
                     onChange={handleInputChange}
                     rows="3"
-                    className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm resize-none ${
-                      formErrors.address ? 'border-red-500' : 'border-gray-200'
-                    }`}
-                    required
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm resize-none"
                   />
-                  {formErrors.address && (
-                    <p className="mt-1 text-sm text-red-600">{formErrors.address}</p>
-                  )}
                 </div>
 
                 {/* City */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    City <span className="text-red-500">*</span>
+                    City
                   </label>
                   <input
                     type="text"
@@ -404,20 +370,14 @@ const AddVendorForm = () => {
                     placeholder="Enter city"
                     value={formData.city}
                     onChange={handleInputChange}
-                    className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm ${
-                      formErrors.city ? 'border-red-500' : 'border-gray-200'
-                    }`}
-                    required
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
                   />
-                  {formErrors.city && (
-                    <p className="mt-1 text-sm text-red-600">{formErrors.city}</p>
-                  )}
                 </div>
 
                 {/* State */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    State <span className="text-red-500">*</span>
+                    State
                   </label>
                   <input
                     type="text"
@@ -425,20 +385,14 @@ const AddVendorForm = () => {
                     placeholder="Enter state"
                     value={formData.state}
                     onChange={handleInputChange}
-                    className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm ${
-                      formErrors.state ? 'border-red-500' : 'border-gray-200'
-                    }`}
-                    required
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
                   />
-                  {formErrors.state && (
-                    <p className="mt-1 text-sm text-red-600">{formErrors.state}</p>
-                  )}
                 </div>
 
                 {/* Pin Code */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Pin Code <span className="text-red-500">*</span>
+                    Pin Code
                   </label>
                   <input
                     type="text"
@@ -447,14 +401,8 @@ const AddVendorForm = () => {
                     value={formData.pin_code}
                     onChange={handleInputChange}
                     maxLength="6"
-                    className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm ${
-                      formErrors.pin_code ? 'border-red-500' : 'border-gray-200'
-                    }`}
-                    required
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
                   />
-                  {formErrors.pin_code && (
-                    <p className="mt-1 text-sm text-red-600">{formErrors.pin_code}</p>
-                  )}
                 </div>
 
                 {/* Contact Person */}
@@ -511,14 +459,15 @@ const AddVendorForm = () => {
                 {/* Phone */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Phone <span className="text-red-500">*</span>
+                    Phone <span className="text-red-500">*</span> <span className="text-gray-500 text-xs">(10 digits, +91 optional, spaces allowed)</span>
                   </label>
                   <input
                     type="tel"
                     name="phone"
-                    placeholder="+91 XXXXX XXXXX"
+                    placeholder="9876543210 or +91 9876543210"
                     value={formData.phone}
                     onChange={handleInputChange}
+                    pattern="^(\+91\s?)?[6-9]\d{4}\s?\d{5}$"
                     className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm ${
                       formErrors.phone ? 'border-red-500' : 'border-gray-200'
                     }`}
@@ -575,6 +524,11 @@ const AddVendorForm = () => {
                       setSelectedProducts([...selectedProducts, value]);
                     }
                     e.target.value = '';
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Tab' || e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                      e.preventDefault();
+                    }
                   }}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm appearance-none bg-white mb-3"
                 >

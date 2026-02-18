@@ -1391,7 +1391,7 @@ const FlowerOrderAssignStage3 = () => {
                               <td className="px-4 py-3">
                                 <select
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-                                  value={product.status || 'pending'}
+                                  value={(product.status || 'pending').toLowerCase().replace(/\s+/g, '')}
                                   onChange={(e) => {
                                     const updatedRows = [...productRows];
                                     const rowIndex = productRows.findIndex(r => r.id === product.id);
@@ -1617,7 +1617,7 @@ const FlowerOrderAssignStage3 = () => {
                               <label className="block text-xs font-semibold text-gray-700 mb-1">Status</label>
                               <select
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-                                value={product.status || 'pending'}
+                                value={(product.status || 'pending').toLowerCase().replace(/\s+/g, '')}
                                 onChange={(e) => {
                                   const updatedRows = [...productRows];
                                   const rowIndex = productRows.findIndex(r => r.id === product.id);

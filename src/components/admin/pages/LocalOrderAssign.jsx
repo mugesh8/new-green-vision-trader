@@ -315,55 +315,18 @@ const LocalOrderAssign = () => {
           drivers
         });
 
-        // Try to load local order data first
-        // Check if localOrderData was passed from navigation state (for faster loading)
+        // Always fetch fresh local order data from the API to get the latest status from the database
         let localOrderData = null;
-        
-        // First, try to use data from navigation state if available
-        if (localOrderDataFromState) {
-          localOrderData = localOrderDataFromState;
-          // Parse JSON strings if needed (similar to API response handling)
-          if (localOrderData.product_assignments && typeof localOrderData.product_assignments === 'string') {
-            try {
-              localOrderData.productAssignments = JSON.parse(localOrderData.product_assignments);
-            } catch (e) {
-              console.error('Error parsing product_assignments from state:', e);
-            }
-          }
-          if (localOrderData.delivery_routes && typeof localOrderData.delivery_routes === 'string') {
-            try {
-              localOrderData.deliveryRoutes = JSON.parse(localOrderData.delivery_routes);
-            } catch (e) {
-              console.error('Error parsing delivery_routes from state:', e);
-            }
-          }
-          if (localOrderData.summary_data && typeof localOrderData.summary_data === 'string') {
-            try {
-              localOrderData.summaryData = JSON.parse(localOrderData.summary_data);
-            } catch (e) {
-              console.error('Error parsing summary_data from state:', e);
-            }
-          }
-        }
-        
-        // If not in state, fetch from API
-        if (!localOrderData) {
-          try {
-            const localOrderResponse = await getLocalOrder(id);
-          // console.log('=== LOCAL ORDER RESPONSE ===');
-          // console.log('Full response:', JSON.stringify(localOrderResponse, null, 2));
-          // console.log('Response type:', typeof localOrderResponse);
-          // console.log('Has data property:', 'data' in (localOrderResponse || {}));
-          // console.log('Has success property:', 'success' in (localOrderResponse || {}));
+
+        try {
+          const localOrderResponse = await getLocalOrder(id);
 
           // Handle different response structures
           if (localOrderResponse) {
-            // Case 1: Response has success and data properties
+            // Case 1: Response has success and data properties (most common)
             if (localOrderResponse.success && localOrderResponse.data) {
               const rawData = localOrderResponse.data;
-              // console.log('Raw data from backend:', rawData);
 
-              // Parse JSON strings and convert snake_case to camelCase
               localOrderData = {
                 collectionType: rawData.collection_type || rawData.collectionType,
                 productAssignments: null,
@@ -371,68 +334,75 @@ const LocalOrderAssign = () => {
                 summaryData: null
               };
 
-              // Parse product_assignments (stored as JSON string)
+              // Parse product_assignments (stored as JSON string in DB)
               if (rawData.product_assignments) {
                 try {
                   localOrderData.productAssignments = typeof rawData.product_assignments === 'string'
                     ? JSON.parse(rawData.product_assignments)
                     : rawData.product_assignments;
-                  // console.log('Parsed productAssignments:', localOrderData.productAssignments);
                 } catch (e) {
                   console.error('Error parsing product_assignments:', e);
                 }
               }
 
-              // Parse delivery_routes (stored as JSON string)
+              // Parse delivery_routes (stored as JSON string in DB)
               if (rawData.delivery_routes) {
                 try {
                   localOrderData.deliveryRoutes = typeof rawData.delivery_routes === 'string'
                     ? JSON.parse(rawData.delivery_routes)
                     : rawData.delivery_routes;
-                  // console.log('Parsed deliveryRoutes:', localOrderData.deliveryRoutes);
                 } catch (e) {
                   console.error('Error parsing delivery_routes:', e);
                 }
               }
 
-              // Parse summary_data (stored as JSON string)
+              // Parse summary_data (stored as JSON string in DB) — contains statuses
               if (rawData.summary_data) {
                 try {
                   localOrderData.summaryData = typeof rawData.summary_data === 'string'
                     ? JSON.parse(rawData.summary_data)
                     : rawData.summary_data;
-                  // console.log('Parsed summaryData:', localOrderData.summaryData);
                 } catch (e) {
                   console.error('Error parsing summary_data:', e);
                 }
               }
-
-              // console.log('Using response.data (success=true)');
             }
             // Case 2: Response has data property (no success field)
             else if (localOrderResponse.data && !localOrderResponse.success) {
-              localOrderData = localOrderResponse.data;
-              // console.log('Using response.data (no success field)');
+              const rawData = localOrderResponse.data;
+              localOrderData = {
+                collectionType: rawData.collection_type || rawData.collectionType,
+                productAssignments: rawData.product_assignments
+                  ? (typeof rawData.product_assignments === 'string' ? JSON.parse(rawData.product_assignments) : rawData.product_assignments)
+                  : null,
+                deliveryRoutes: rawData.delivery_routes
+                  ? (typeof rawData.delivery_routes === 'string' ? JSON.parse(rawData.delivery_routes) : rawData.delivery_routes)
+                  : null,
+                summaryData: rawData.summary_data
+                  ? (typeof rawData.summary_data === 'string' ? JSON.parse(rawData.summary_data) : rawData.summary_data)
+                  : null,
+              };
             }
             // Case 3: Response is the data itself
             else if (localOrderResponse.collectionType || localOrderResponse.productAssignments) {
               localOrderData = localOrderResponse;
-              // console.log('Response is the data itself');
             }
           }
-
-          // console.log('=== PARSED LOCAL ORDER DATA ===');
-          // console.log('Has productAssignments:', !!(localOrderData?.productAssignments));
-          // console.log('Has deliveryRoutes:', !!(localOrderData?.deliveryRoutes));
-          // console.log('Has summaryData:', !!(localOrderData?.summaryData));
-          if (localOrderData) {
-            // console.log('Full parsed data:', JSON.stringify(localOrderData, null, 2));
-          }
         } catch (error) {
-          // console.log('=== ERROR LOADING LOCAL ORDER ===');
-          // console.log('Error:', error);
-          // console.log('Error message:', error.message);
-          // console.log('Will try flight assignment or initialize fresh');
+          // API fetch failed — fall back to navigation state data if available
+          console.warn('Could not fetch fresh local order from API, falling back to navigation state:', error.message);
+          if (localOrderDataFromState) {
+            localOrderData = { ...localOrderDataFromState };
+            // Parse JSON strings from navigation state
+            if (localOrderData.product_assignments && typeof localOrderData.product_assignments === 'string') {
+              try { localOrderData.productAssignments = JSON.parse(localOrderData.product_assignments); } catch (e) { /* ignore */ }
+            }
+            if (localOrderData.delivery_routes && typeof localOrderData.delivery_routes === 'string') {
+              try { localOrderData.deliveryRoutes = JSON.parse(localOrderData.delivery_routes); } catch (e) { /* ignore */ }
+            }
+            if (localOrderData.summary_data && typeof localOrderData.summary_data === 'string') {
+              try { localOrderData.summaryData = JSON.parse(localOrderData.summary_data); } catch (e) { /* ignore */ }
+            }
           }
         }
 
@@ -441,7 +411,7 @@ const LocalOrderAssign = () => {
         const productAssignments = localOrderData?.productAssignments || localOrderData?.product_assignments;
         const deliveryRoutesData = localOrderData?.deliveryRoutes || localOrderData?.delivery_routes;
         const summaryDataFromLocal = localOrderData?.summaryData || localOrderData?.summary_data;
-        
+
         if (localOrderData && productAssignments) {
           // console.log('Loading from local order data');
 
@@ -540,7 +510,7 @@ const LocalOrderAssign = () => {
                       addressInfo: assignment.address || ''
                     };
 
-                   // console.log(`  Remaining assignment ${idx} (${remainingKey}):`, remainingAssignmentsData[remainingKey]);
+                    // console.log(`  Remaining assignment ${idx} (${remainingKey}):`, remainingAssignmentsData[remainingKey]);
                   });
 
                   setRemainingRowAssignments(prev => {
@@ -609,6 +579,49 @@ const LocalOrderAssign = () => {
               }
             }
 
+            // Build status map FIRST from summaryData before setting any state
+            // This ensures both states are applied in the same React batch
+            const statusMap = {};
+
+            // Resolve summaryData from all possible locations (handles string, object, or pre-parsed)
+            let resolvedSummaryData = summaryDataFromLocal;
+            if (!resolvedSummaryData && localOrderData?.summary_data) {
+              if (typeof localOrderData.summary_data === 'object') {
+                resolvedSummaryData = localOrderData.summary_data;
+              } else if (typeof localOrderData.summary_data === 'string') {
+                try {
+                  resolvedSummaryData = JSON.parse(localOrderData.summary_data);
+                } catch (e) {
+                  console.error('Error parsing summary_data for status restore:', e);
+                }
+              }
+            }
+
+            if (resolvedSummaryData?.driverAssignments) {
+              resolvedSummaryData.driverAssignments.forEach(assignment => {
+                assignment.assignments?.forEach(item => {
+                  // Prefer the saved routeId; fall back to reconstructing it for backward compatibility
+                  let routeId = item.routeId;
+                  if (!routeId) {
+                    routeId = `${item.entityType}-${item.entityId}-${item.oiid}`;
+                  }
+
+                  // Normalize status (only lowercase 'completed', keep others as-is)
+                  let normalizedStatus = item.status || '';
+                  if (normalizedStatus && typeof normalizedStatus === 'string') {
+                    normalizedStatus = normalizedStatus.toLowerCase() === 'completed' ? 'completed' : normalizedStatus;
+                  }
+                  statusMap[routeId] = normalizedStatus;
+                  if (item.dropDriver) {
+                    statusMap[`${routeId}-dropDriver`] = item.dropDriver;
+                  }
+                  if (item.collectionStatus) {
+                    statusMap[`${routeId}-collection`] = item.collectionStatus;
+                  }
+                });
+              });
+            }
+
             // Restore delivery routes
             if (deliveryRoutesData) {
               // Transform the routes to ensure labours is an array
@@ -638,45 +651,12 @@ const LocalOrderAssign = () => {
                 };
               });
 
-              //console.log('Transformed delivery routes with labours:', transformedRoutes);
+              // Set both states together so they apply in the same render
               setDeliveryRoutes(transformedRoutes);
             }
 
-            // Restore assignment statuses
-            if (summaryDataFromLocal?.driverAssignments) {
-              const statusMap = {};
-              summaryDataFromLocal.driverAssignments.forEach(assignment => {
-                assignment.assignments?.forEach(item => {
-                  let routeId;
-
-                  if (item.isRemaining) {
-                    // For remaining allocations, the oiid is like "4-remaining-0"
-                    // The routeId should be "supplier-1-4-remaining-0"
-                    routeId = `${item.entityType}-${item.entityId}-${item.oiid}`;
-                  } else {
-                    // For regular allocations, the oiid is just the number like "4"
-                    // The routeId should be "farmer-1-4"
-                    routeId = `${item.entityType}-${item.entityId}-${item.oiid}`;
-                  }
-
-                  //console.log('Restoring status for routeId:', routeId, 'Status:', item.status);
-
-                  // Normalize status to lowercase (handle both "Completed" and "completed")
-                  let normalizedStatus = item.status || '';
-                  if (normalizedStatus && typeof normalizedStatus === 'string') {
-                    normalizedStatus = normalizedStatus.toLowerCase() === 'completed' ? 'completed' : normalizedStatus;
-                  }
-                  statusMap[routeId] = normalizedStatus;
-                  if (item.dropDriver) {
-                    statusMap[`${routeId}-dropDriver`] = item.dropDriver;
-                  }
-                  if (item.collectionStatus) {
-                    statusMap[`${routeId}-collection`] = item.collectionStatus;
-                  }
-                });
-              });
-
-              //console.log('Final statusMap:', statusMap);
+            // Apply statuses (set after routes so both are in the same batch)
+            if (Object.keys(statusMap).length > 0) {
               setAssignmentStatuses(statusMap);
             }
           }
@@ -1063,25 +1043,26 @@ const LocalOrderAssign = () => {
             driverId: driverInfo?.driver_id ?? null,
             totalWeight: parseFloat(group.assignments.reduce((sum, a) => sum + parseFloat(a.quantity), 0).toFixed(2)),
             assignments: group.assignments.map(a => {
-            let status = assignmentStatuses[a.routeId] || '';
-            // Normalize status to lowercase for consistency (handle both "Completed" and "completed")
-            if (status && typeof status === 'string') {
-              status = status.toLowerCase() === 'completed' ? 'completed' : status;
-            }
-            return {
-              product: a.product,
-              entityType: a.entityType,
-              entityName: a.location,
-              entityId: a.entityId,
-              address: a.address,
-              quantity: parseFloat(a.quantity),
-              isRemaining: a.isRemaining || false,
-              oiid: a.oiid,
-              status: status,
-              dropDriver: status === 'Drop' ? assignmentStatuses[`${a.routeId}-dropDriver`] || '' : '',
-              collectionStatus: status === 'Drop' ? assignmentStatuses[`${a.routeId}-collection`] || '' : ''
-            };
-          })
+              let status = assignmentStatuses[a.routeId] || '';
+              // Normalize status to lowercase for consistency (handle both "Completed" and "completed")
+              if (status && typeof status === 'string') {
+                status = status.toLowerCase() === 'completed' ? 'completed' : status;
+              }
+              return {
+                product: a.product,
+                entityType: a.entityType,
+                entityName: a.location,
+                entityId: a.entityId,
+                address: a.address,
+                quantity: parseFloat(a.quantity),
+                isRemaining: a.isRemaining || false,
+                oiid: a.oiid,
+                routeId: a.routeId,
+                status: status,
+                dropDriver: status === 'Drop' ? assignmentStatuses[`${a.routeId}-dropDriver`] || '' : '',
+                collectionStatus: status === 'Drop' ? assignmentStatuses[`${a.routeId}-collection`] || '' : ''
+              };
+            })
           };
         }),
         totalCollections: deliveryRoutes.filter(route => route.driver).length,
@@ -1485,7 +1466,7 @@ const LocalOrderAssign = () => {
                     </td>
                     <td className="px-4 py-4">
                       <div className="text-sm text-gray-600">
-                        {row.isRemaining 
+                        {row.isRemaining
                           ? (remainingRowAssignments[row.id]?.addressInfo || '-')
                           : (row.addressInfo || '-')
                         }
@@ -1748,7 +1729,7 @@ const LocalOrderAssign = () => {
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1">Address</label>
                     <div className="text-sm text-gray-600 p-2 bg-gray-50 rounded-lg">
-                      {row.isRemaining 
+                      {row.isRemaining
                         ? (remainingRowAssignments[row.id]?.addressInfo || '-')
                         : (row.addressInfo || '-')
                       }

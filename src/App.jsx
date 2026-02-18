@@ -69,6 +69,9 @@ import LabourDailyPayout from './components/admin/pages/LabourDailyPayout'
 import LabourExcessPayManagement from './components/admin/pages/LabourExcessPayManagement'
 import AddLabourExcessPay from './components/admin/pages/AddLabourExcessPay'
 import EditLabourExcessPay from './components/admin/pages/EditLabourExcessPay'
+import LabourRemarksManagement from './components/admin/pages/LabourRemarksManagement'
+import LabourRemarkAdd from './components/admin/pages/LabourRemarkAdd'
+import LabourRemarkEdit from './components/admin/pages/LabourRemarkEdit'
 import DriveAttendance from './components/admin/pages/DriveAttendance'
 import ReportManagement from './components/admin/pages/ReportManagement'
 import ReportFarmer from './components/admin/pages/ReportFarmer'
@@ -854,6 +857,42 @@ const App = () => {
               <Layout>
                 <RequirePermission module="Labour" action="dailypayout">
                   <LabourDailyPayout />
+                </RequirePermission>
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/labour/:id/labour-remarks"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <RequirePermission module="Labour" action="view">
+                  <LabourRemarksManagement />
+                </RequirePermission>
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/labour/:id/labour-remarks/add"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <RequirePermission module="Labour" action="view">
+                  <LabourRemarkAdd />
+                </RequirePermission>
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/labour/:id/labour-remarks/edit/:remarkId"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <RequirePermission module="Labour" action="view">
+                  <LabourRemarkEdit />
                 </RequirePermission>
               </Layout>
             </ProtectedRoute>

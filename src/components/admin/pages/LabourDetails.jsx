@@ -89,6 +89,12 @@ const LabourDetails = () => {
           >
             Labour Daily Payout
           </button>
+          <button
+            onClick={() => navigate(`/labour/${id}/labour-remarks`)}
+            className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm whitespace-nowrap bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+          >
+            Labour Remarks
+          </button>
         </div>
       </div>
 

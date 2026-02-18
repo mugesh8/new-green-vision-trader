@@ -9,7 +9,7 @@ const AddSupplierForm = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     supplier_name: '',
-    registration_number: '',
+    place: '',
     address: '',
     city: '',
     state: '',
@@ -62,7 +62,7 @@ const AddSupplierForm = () => {
     const { name, value } = e.target;
     const fieldMap = {
       supplierName: 'supplier_name',
-      registrationNumber: 'registration_number',
+      place: 'place',
       contactPerson: 'contact_person',
       tapeColor: 'tape_color',
       dealingPerson: 'dealing_person',
@@ -92,14 +92,14 @@ const AddSupplierForm = () => {
     try {
       const formDataToSend = new FormData();
       formDataToSend.append('supplier_name', formData.supplier_name);
-      formDataToSend.append('registration_number', formData.registration_number);
+      formDataToSend.append('place', formData.place);
       formDataToSend.append('phone', formData.primary_phone);
-      formDataToSend.append('secondary_phone', formData.secondary_phone);
-      formDataToSend.append('email', formData.email);
-      formDataToSend.append('address', formData.address);
-      formDataToSend.append('city', formData.city);
-      formDataToSend.append('state', formData.state);
-      formDataToSend.append('pin_code', formData.pin_code);
+      formDataToSend.append('secondary_phone', formData.secondary_phone || '');
+      formDataToSend.append('email', formData.email || '');
+      formDataToSend.append('address', formData.address || '');
+      formDataToSend.append('city', formData.city || '');
+      formDataToSend.append('state', formData.state || '');
+      formDataToSend.append('pin_code', formData.pin_code || '');
       formDataToSend.append('contact_person', formData.contact_person);
       formDataToSend.append('tape_color', formData.tape_color);
       formDataToSend.append('dealing_person', formData.dealing_person);
@@ -229,25 +229,26 @@ const AddSupplierForm = () => {
                 />
               </div>
 
-              {/* Registration Number */}
+              {/* Place */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Registration Number
+                  Place <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  name="registrationNumber"
-                  placeholder="UST/CTN Number"
-                  value={formData.registration_number}
+                  name="place"
+                  placeholder="Enter Place"
+                  value={formData.place}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
+                  required
                 />
               </div>
 
               {/* Address */}
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Address <span className="text-red-500">*</span>
+                  Address
                 </label>
                 <textarea
                   name="address"
@@ -256,14 +257,13 @@ const AddSupplierForm = () => {
                   onChange={handleInputChange}
                   rows="3"
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm resize-none"
-                  required
                 />
               </div>
 
               {/* City */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  City <span className="text-red-500">*</span>
+                  City
                 </label>
                 <input
                   type="text"
@@ -272,14 +272,13 @@ const AddSupplierForm = () => {
                   value={formData.city}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
-                  required
                 />
               </div>
 
               {/* State */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  State <span className="text-red-500">*</span>
+                  State
                 </label>
                 <input
                   type="text"
@@ -288,14 +287,13 @@ const AddSupplierForm = () => {
                   value={formData.state}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
-                  required
                 />
               </div>
 
               {/* Pincode */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Pincode <span className="text-red-500">*</span>
+                  Pincode
                 </label>
                 <input
                   type="text"
@@ -305,7 +303,6 @@ const AddSupplierForm = () => {
                   onChange={handleInputChange}
                   maxLength="6"
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
-                  required
                 />
               </div>
 
@@ -364,14 +361,15 @@ const AddSupplierForm = () => {
               {/* Primary Phone */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Primary Phone <span className="text-red-500">*</span>
+                  Primary Phone <span className="text-red-500">*</span> <span className="text-gray-500 text-xs">(10 digits, +91 optional, spaces allowed)</span>
                 </label>
                 <input
                   type="tel"
                   name="primaryPhone"
-                  placeholder="+91 XXXXX XXXXX"
+                  placeholder="9876543210 or +91 9876543210"
                   value={formData.primary_phone}
                   onChange={handleInputChange}
+                  pattern="^(\+91\s?)?[6-9]\d{4}\s?\d{5}$"
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
                   required
                 />
@@ -380,7 +378,7 @@ const AddSupplierForm = () => {
               {/* Email Address */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Email Address <span className="text-red-500">*</span>
+                  Email Address
                 </label>
                 <input
                   type="email"
@@ -389,7 +387,6 @@ const AddSupplierForm = () => {
                   value={formData.email}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
-                  required
                 />
               </div>
 
@@ -424,6 +421,11 @@ const AddSupplierForm = () => {
                     setSelectedVegetables([...selectedVegetables, value]);
                   }
                   e.target.value = '';
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Tab' || e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                  }
                 }}
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm appearance-none bg-white mb-3"
               >

@@ -309,7 +309,7 @@ const Farmers = () => {
                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Farmer Name</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Product List</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Contact</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Location</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Place</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Status</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Action</th>
               </tr>
@@ -383,7 +383,7 @@ const Farmers = () => {
                   </td>
 
                   <td className="px-6 py-4">
-                    <div className="text-sm text-[#0D5C4D]">{farmer.city}, {farmer.state}</div>
+                    <div className="text-sm text-[#0D5C4D]">{farmer.place}</div>
                   </td>
 
                   <td className="px-6 py-4">

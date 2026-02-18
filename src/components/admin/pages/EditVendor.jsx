@@ -19,7 +19,7 @@ const EditVendorDetails = () => {
   const [formData, setFormData] = useState({
     vendorName: '',
     vendorType: 'farmer',
-    registrationNumber: '',
+    place: '',
     address: '',
     city: '',
     state: '',
@@ -104,7 +104,7 @@ const EditVendorDetails = () => {
         setFormData({
           vendorName: vendor.vendorName,
           vendorType: vendor.vendorType,
-          registrationNumber: vendor.registrationNumber,
+          place: vendor.place,
           address: vendor.address,
           city: vendor.city,
           state: vendor.state,
@@ -237,14 +237,15 @@ const EditVendorDetails = () => {
 
                     <div>
                       <label className="block text-sm font-medium text-gray-900 mb-2">
-                        Registration Number
+                        Place <span className="text-red-500">*</span>
                       </label>
                       <input
                         type="text"
-                        name="registrationNumber"
-                        value={formData.registrationNumber}
+                        name="place"
+                        value={formData.place}
                         onChange={handleInputChange}
                         className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-gray-900"
+                        required
                       />
                     </div>
                   </div>
@@ -252,7 +253,7 @@ const EditVendorDetails = () => {
                   {/* Address */}
                   <div>
                     <label className="block text-sm font-medium text-gray-900 mb-2">
-                      Address <span className="text-red-500">*</span>
+                      Address
                     </label>
                     <textarea
                       name="address"
@@ -260,7 +261,6 @@ const EditVendorDetails = () => {
                       onChange={handleInputChange}
                       rows="3"
                       className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-gray-900 resize-none"
-                      required
                     />
                   </div>
 
@@ -268,7 +268,7 @@ const EditVendorDetails = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-900 mb-2">
-                        City <span className="text-red-500">*</span>
+                        City
                       </label>
                       <div className="relative">
                         <select
@@ -276,8 +276,8 @@ const EditVendorDetails = () => {
                           value={formData.city}
                           onChange={handleInputChange}
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-gray-900 appearance-none bg-white capitalize"
-                          required
                         >
+                          <option value="">Select City</option>
                           <option value="chennai">Chennai</option>
                           <option value="mumbai">Mumbai</option>
                           <option value="delhi">Delhi</option>
@@ -289,7 +289,7 @@ const EditVendorDetails = () => {
 
                     <div>
                       <label className="block text-sm font-medium text-gray-900 mb-2">
-                        State <span className="text-red-500">*</span>
+                        State
                       </label>
                       <div className="relative">
                         <select
@@ -297,8 +297,8 @@ const EditVendorDetails = () => {
                           value={formData.state}
                           onChange={handleInputChange}
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-gray-900 appearance-none bg-white capitalize"
-                          required
                         >
+                          <option value="">Select State</option>
                           <option value="tamilnadu">Tamilnadu</option>
                           <option value="maharashtra">Maharashtra</option>
                           <option value="delhi">Delhi</option>
@@ -313,7 +313,7 @@ const EditVendorDetails = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-900 mb-2">
-                        Pincode <span className="text-red-500">*</span>
+                        Pincode
                       </label>
                       <input
                         type="text"
@@ -322,7 +322,6 @@ const EditVendorDetails = () => {
                         onChange={handleInputChange}
                         maxLength="6"
                         className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-gray-900"
-                        required
                       />
                     </div>
 
@@ -385,13 +384,15 @@ const EditVendorDetails = () => {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-900 mb-2">
-                          Primary Phone <span className="text-red-500">*</span>
+                          Primary Phone <span className="text-red-500">*</span> <span className="text-gray-500 text-xs">(10 digits, +91 optional, spaces allowed)</span>
                         </label>
                         <input
                           type="tel"
                           name="primaryPhone"
                           value={formData.primaryPhone}
                           onChange={handleInputChange}
+                          pattern="^(\+91\s?)?[6-9]\d{4}\s?\d{5}$"
+                          placeholder="9876543210 or +91 9876543210"
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-gray-900"
                           required
                         />
@@ -399,7 +400,7 @@ const EditVendorDetails = () => {
 
                       <div>
                         <label className="block text-sm font-medium text-gray-900 mb-2">
-                          Email Address <span className="text-red-500">*</span>
+                          Email Address
                         </label>
                         <input
                           type="email"
@@ -407,7 +408,6 @@ const EditVendorDetails = () => {
                           value={formData.email}
                           onChange={handleInputChange}
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-gray-900"
-                          required
                         />
                       </div>
                     </div>

@@ -20,7 +20,7 @@ const EditThirdParty = () => {
   
   const [formData, setFormData] = useState({
     thirdPartyName: '',
-    registrationNumber: '',
+    place: '',
     address: '',
     city: '',
     state: '',
@@ -74,7 +74,7 @@ const EditThirdParty = () => {
         // Set form data
         setFormData({
           thirdPartyName: thirdParty.third_party_name || '',
-          registrationNumber: thirdParty.registration_number || '',
+          place: thirdParty.place || '',
           address: thirdParty.address || '',
           city: thirdParty.city || '',
           state: thirdParty.state || '',
@@ -139,7 +139,7 @@ const EditThirdParty = () => {
       // Prepare data as JSON object
       const submitData = {
         third_party_name: formData.thirdPartyName,
-        registration_number: formData.registrationNumber,
+        place: formData.place,
         address: formData.address,
         city: formData.city,
         state: formData.state,
@@ -248,21 +248,22 @@ const EditThirdParty = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Registration Number
+                  Place <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  name="registrationNumber"
-                  placeholder="UST/CTN Number"
-                  value={formData.registrationNumber}
+                  name="place"
+                  placeholder="Enter Place"
+                  value={formData.place}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
+                  required
                 />
               </div>
 
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Address <span className="text-red-500">*</span>
+                  Address
                 </label>
                 <textarea
                   name="address"
@@ -271,13 +272,12 @@ const EditThirdParty = () => {
                   onChange={handleInputChange}
                   rows="3"
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm resize-none"
-                  required
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  City <span className="text-red-500">*</span>
+                  City
                 </label>
                 <input
                   type="text"
@@ -286,13 +286,12 @@ const EditThirdParty = () => {
                   value={formData.city}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
-                  required
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  State <span className="text-red-500">*</span>
+                  State
                 </label>
                 <input
                   type="text"
@@ -301,13 +300,12 @@ const EditThirdParty = () => {
                   value={formData.state}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
-                  required
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Pincode <span className="text-red-500">*</span>
+                  Pincode
                 </label>
                 <input
                   type="text"
@@ -317,7 +315,6 @@ const EditThirdParty = () => {
                   onChange={handleInputChange}
                   maxLength="6"
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
-                  required
                 />
               </div>
 
@@ -371,14 +368,15 @@ const EditThirdParty = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Primary Phone <span className="text-red-500">*</span>
+                  Primary Phone <span className="text-red-500">*</span> <span className="text-gray-500 text-xs">(10 digits, +91 optional, spaces allowed)</span>
                 </label>
                 <input
                   type="tel"
                   name="primaryPhone"
-                  placeholder="+91 XXXXX XXXXX"
+                  placeholder="9876543210 or +91 9876543210"
                   value={formData.primaryPhone}
                   onChange={handleInputChange}
+                  pattern="^(\+91\s?)?[6-9]\d{4}\s?\d{5}$"
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
                   required
                 />
@@ -386,7 +384,7 @@ const EditThirdParty = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Email Address <span className="text-red-500">*</span>
+                  Email Address
                 </label>
                 <input
                   type="email"
@@ -395,7 +393,6 @@ const EditThirdParty = () => {
                   value={formData.email}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
-                  required
                 />
               </div>
 

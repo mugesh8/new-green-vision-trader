@@ -31,7 +31,7 @@ const EditSupplier = () => {
 
   const [formData, setFormData] = useState({
     supplierName: '',
-    registrationNumber: '',
+    place: '',
     address: '',
     city: '',
     state: '',
@@ -66,7 +66,7 @@ const EditSupplier = () => {
         const supplier = supplierResponse.data;
         setFormData({
           supplierName: supplier.supplier_name || '',
-          registrationNumber: supplier.registration_number || '',
+          place: supplier.place || '',
           address: supplier.address || '',
           city: supplier.city || '',
           state: supplier.state || '',
@@ -129,7 +129,7 @@ const EditSupplier = () => {
     try {
       const supplierPayload = {
         supplier_name: formData.supplierName,
-        registration_number: formData.registrationNumber,
+        place: formData.place,
         phone: formData.primaryPhone,
         secondary_phone: formData.secondaryPhone,
         email: formData.email,
@@ -222,21 +222,22 @@ const EditSupplier = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Registration Number
+                  Place <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  name="registrationNumber"
-                  placeholder="UST/CTN Number"
-                  value={formData.registrationNumber}
+                  name="place"
+                  placeholder="Enter Place"
+                  value={formData.place}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
+                  required
                 />
               </div>
 
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Address <span className="text-red-500">*</span>
+                  Address
                 </label>
                 <textarea
                   name="address"
@@ -245,13 +246,12 @@ const EditSupplier = () => {
                   onChange={handleInputChange}
                   rows="3"
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm resize-none"
-                  required
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  City <span className="text-red-500">*</span>
+                  City
                 </label>
                 <input
                   type="text"
@@ -260,13 +260,12 @@ const EditSupplier = () => {
                   value={formData.city}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
-                  required
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  State <span className="text-red-500">*</span>
+                  State
                 </label>
                 <input
                   type="text"
@@ -275,13 +274,12 @@ const EditSupplier = () => {
                   value={formData.state}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
-                  required
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Pincode <span className="text-red-500">*</span>
+                  Pincode
                 </label>
                 <input
                   type="text"
@@ -291,7 +289,6 @@ const EditSupplier = () => {
                   onChange={handleInputChange}
                   maxLength="6"
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
-                  required
                 />
               </div>
 
@@ -345,14 +342,15 @@ const EditSupplier = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Primary Phone <span className="text-red-500">*</span>
+                  Primary Phone <span className="text-red-500">*</span> <span className="text-gray-500 text-xs">(10 digits, +91 optional, spaces allowed)</span>
                 </label>
                 <input
                   type="tel"
                   name="primaryPhone"
-                  placeholder="+91 XXXXX XXXXX"
+                  placeholder="9876543210 or +91 9876543210"
                   value={formData.primaryPhone}
                   onChange={handleInputChange}
+                  pattern="^(\+91\s?)?[6-9]\d{4}\s?\d{5}$"
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
                   required
                 />
@@ -360,7 +358,7 @@ const EditSupplier = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Email Address <span className="text-red-500">*</span>
+                  Email Address
                 </label>
                 <input
                   type="email"
@@ -369,7 +367,6 @@ const EditSupplier = () => {
                   value={formData.email}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent text-sm"
-                  required
                 />
               </div>
 

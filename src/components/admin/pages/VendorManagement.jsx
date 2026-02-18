@@ -164,21 +164,21 @@ const VendorDashboard = () => {
       vendorName = vendor.farmer_name || vendor.name || 'Unknown Farmer';
       contact = vendor.phone || vendor.primary_phone || '';
       email = vendor.email || '';
-      location = `${vendor.city || ''}, ${vendor.state || ''}`;
+      location = vendor.place || '';
     } else if (vendor.vendor_type === 'supplier') {
       vendorType = 'Supplier';
       vendorId = vendor.sid || '';
       vendorName = vendor.supplier_name || vendor.name || 'Unknown Supplier';
       contact = vendor.phone || vendor.primary_phone || '';
       email = vendor.email || '';
-      location = `${vendor.city || ''}, ${vendor.state || ''}`;
+      location = vendor.place || '';
     } else if (vendor.vendor_type === 'third party') {
       vendorType = 'Third Party';
       vendorId = vendor.tpid || '';
       vendorName = vendor.third_party_name || vendor.name || 'Unknown Third Party';
       contact = vendor.phone || vendor.primary_phone || '';
       email = vendor.email || '';
-      location = `${vendor.city || ''}, ${vendor.state || ''}`;
+      location = vendor.place || '';
     }
 
     return {
@@ -505,7 +505,7 @@ const VendorDashboard = () => {
                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Type</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Product List</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Contact</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Location</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Place</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Status</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Action</th>
               </tr>

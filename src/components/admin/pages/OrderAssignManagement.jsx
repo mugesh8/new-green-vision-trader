@@ -22,8 +22,8 @@ const OrderAssignManagement = () => {
       setLoading(true);
       const response = await getAllOrders();
       const ordersData = (response.data || []).sort((a, b) => {
-        const dateA = new Date(a.order_received_date || 0);
-        const dateB = new Date(b.order_received_date || 0);
+        const dateA = new Date(a.createdAt || a.order_received_date || 0);
+        const dateB = new Date(b.createdAt || b.order_received_date || 0);
         return dateB - dateA;
       });
       setOrders(ordersData);
