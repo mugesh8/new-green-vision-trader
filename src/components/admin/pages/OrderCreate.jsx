@@ -8,6 +8,7 @@ import { getBoxesAndBags } from '../../../api/inventoryApi';
 import { getAllCustomers, getCustomersByCategory } from '../../../api/customerApi';
 import { getPreferencesByCustomer } from '../../../api/customerProductPreferenceApi';
 import { createNotification } from '../../../api/notificationApi';
+import InsufficientStockModal from '../../../components/common/InsufficientStockModal';
 
 const NewOrder = () => {
   const navigate = useNavigate();
@@ -57,7 +58,9 @@ const NewOrder = () => {
   const [orderId, setOrderId] = useState(null);
   const [draggedIndex, setDraggedIndex] = useState(null);
   const prevOrderTypeRef = useRef(formData.orderType);
-  
+  const [stockModalOpen, setStockModalOpen] = useState(false);
+  const [stockModalMessage, setStockModalMessage] = useState('');
+
   // Refs for keyboard navigation
   const inputGridRefs = useRef({});
 
@@ -99,16 +102,16 @@ const NewOrder = () => {
     if (!arrowKeys.includes(e.key)) return;
 
     e.preventDefault();
-    
+
     const isLocal = formData.orderType === 'local';
     let nextRow = rowIndex;
     let nextCol = colIndex;
-    
+
     // Determine column count and mapping based on order type
     // For non-local: 0=Product, 1=Packing, 2=Boxes, 3=Box Weight, 4=Net Weight, 5=Gross Weight
     // For local: 0=Product, 1=Net Weight
     const columnCount = isLocal ? 2 : 6;
-    
+
     switch (e.key) {
       case 'ArrowRight':
         nextCol = colIndex + 1;
@@ -131,11 +134,11 @@ const NewOrder = () => {
         nextRow = Math.max(nextRow - 1, 0);
         break;
     }
-    
+
     // Get the next input element
     const nextInputKey = `${nextRow}-${nextCol}`;
     const nextInput = inputGridRefs.current[nextInputKey];
-    
+
     if (nextInput) {
       nextInput.focus();
       // Select all text for easy editing (only for input elements, not selects)
@@ -318,7 +321,7 @@ const NewOrder = () => {
         // First fetch packing options
         const items = await getBoxesAndBags();
         setPackingOptions(items);
-        
+
         // Then fetch products
         const response = await getAllProducts(1, 1000);
         const activeProducts = (response.data || []).filter(p => p.product_status === 'active');
@@ -350,7 +353,7 @@ const NewOrder = () => {
           : formData.orderType === 'flower'
             ? 'FLOWER ORDER'
             : 'BOX ORDER';
-        
+
         // Fetch customers by category
         const customersResponse = await getCustomersByCategory(category);
         const customers = customersResponse.data || [];
@@ -410,25 +413,25 @@ const NewOrder = () => {
 
             if (fullProduct && fullProduct.packing_type) {
               const allowedPackingTypes = fullProduct.packing_type.split(',').map(p => p.trim());
-              
+
               // Determine default packing type and box weight
               let defaultPackingType = product.packingType || '';
               let defaultBoxWeight = product.boxWeight || '';
-              
+
               if (allowedPackingTypes.length > 0 && !defaultPackingType) {
                 // Use first packing type as default if not already set
                 defaultPackingType = allowedPackingTypes[0];
-                
+
                 // Find the corresponding packing option to get box weight
                 const selectedPacking = packingOptions.find(item => item.name === defaultPackingType);
                 if (selectedPacking) {
                   defaultBoxWeight = (parseFloat(selectedPacking.weight) || 0).toFixed(2);
                 }
               }
-              
+
               // Use product's net_weight from product table
               const productNetWeight = (parseFloat(fullProduct.net_weight) || 0).toString();
-              
+
               return {
                 ...product,
                 allowedPackingTypes: allowedPackingTypes,
@@ -484,7 +487,7 @@ const NewOrder = () => {
 
   const handleCustomerChange = async (e) => {
     const customerId = e.target.value;
-    
+
     // Reset products when customer changes or is deselected
     if (!customerId) {
       setFormData(prev => ({
@@ -507,9 +510,9 @@ const NewOrder = () => {
       }]);
       return;
     }
-    
+
     const customer = allCustomers.find(c => (c.customer_id || c.cust_id).toString() === customerId);
-    
+
     if (customer) {
       setFormData(prev => ({
         ...prev,
@@ -676,7 +679,7 @@ const NewOrder = () => {
 
             if (selectedPacking) {
               const actualBoxWeight = parseFloat(selectedPacking.weight) || 0;
-              
+
               // Get product's net_weight from product table
               const selectedProduct = allProducts.find(p => p.pid === parseInt(updatedProduct.productId));
               const productNetWeight = selectedProduct?.net_weight ? parseFloat(selectedProduct.net_weight) : 0;
@@ -788,11 +791,11 @@ const NewOrder = () => {
     // Determine default packing type and box weight
     let defaultPackingType = '';
     let defaultBoxWeight = '';
-    
+
     if (allowedPackingTypes.length > 0) {
       // Use first packing type as default (for both single and multiple)
       defaultPackingType = allowedPackingTypes[0];
-      
+
       // Find the corresponding packing option to get box weight
       const selectedPacking = packingOptions.find(item => item.name === defaultPackingType);
       if (selectedPacking) {
@@ -812,13 +815,13 @@ const NewOrder = () => {
             boxWeight: defaultBoxWeight ? defaultBoxWeight.toFixed(2) : '',
             error: ''
           };
-          
+
           // If we have a default packing type, calculate box capacity and weights
           if (defaultPackingType) {
             // Use product's net_weight from product table
             const productNetWeight = parseFloat(product.net_weight) || 0;
             updatedProduct.boxCapacity = productNetWeight.toString();
-            
+
             // If we have numBoxes, calculate net and gross weight
             const numBoxes = parseFloat(updatedProduct.numBoxes) || 0;
             if (productNetWeight > 0 && numBoxes > 0) {
@@ -827,7 +830,7 @@ const NewOrder = () => {
               updatedProduct.grossWeight = (calculatedNetWeight + (numBoxes * defaultBoxWeight)).toFixed(2);
             }
           }
-          
+
           return updatedProduct;
         }
         return p;
@@ -1052,7 +1055,7 @@ const NewOrder = () => {
               category: 'Orders',
               isRead: false  // Explicitly set as unread
             });
-            
+
             // Refresh notifications in Navbar after a short delay to ensure backend has processed it
             setTimeout(() => {
               window.dispatchEvent(new CustomEvent('refreshNotifications'));
@@ -1102,48 +1105,46 @@ const NewOrder = () => {
         }
       } else {
         // Check if the error is related to insufficient inventory
-        const errorMessage = response.message || response.error || '';
-        const isStockError = errorMessage.toLowerCase().includes('insufficient') && 
-                            errorMessage.toLowerCase().includes('inventory');
-        
+        const detailedError = response.error || '';
+        const generalMessage = response.message || '';
+        const combinedError = detailedError + ' ' + generalMessage;
+
+        const isStockError = combinedError.toLowerCase().includes('insufficient') &&
+          combinedError.toLowerCase().includes('inventory');
+
         if (isStockError) {
-          // Show custom alert for stock errors with option to navigate to inventory
-          const goToInventory = window.confirm(
-            `❌ Order Creation Failed\n\n` +
-            `${errorMessage}\n\n` +
-            `Would you like to go to the Inventory Stock page to update the stock?`
-          );
-          
-          if (goToInventory) {
-            navigate('/packing-inventory');
-          }
+          setStockModalMessage(detailedError || generalMessage);
+          setStockModalOpen(true);
         } else {
           // Show regular alert for other errors
           alert(
             (orderId ? "Failed to update order: " : "Failed to create order: ") +
-            errorMessage
+            (response.error || response.message || 'Unknown error')
           );
         }
       }
     } catch (error) {
       console.error("Error saving order:", error);
 
-      // Check if the error is related to insufficient inventory
-      const errorMessage = error.message || error.error || String(error);
-      const isStockError = errorMessage.toLowerCase().includes('insufficient') && 
-                          errorMessage.toLowerCase().includes('inventory');
-      
-      if (isStockError) {
-        // Show custom alert for stock errors with option to navigate to inventory
-        const goToInventory = window.confirm(
-          `❌ Order Creation Failed\n\n` +
-          `${errorMessage}\n\n` +
-          `Would you like to go to the Inventory Stock page to update the stock?`
-        );
-        
-        if (goToInventory) {
-          navigate('/packing-inventory');
+      // Extract error message from API response if available
+      let errorMessage = error.message || String(error);
+
+      if (error.response && error.response.data) {
+        // The detailed error is often in error.response.data.error based on the screenshot
+        // Or in error.response.data.message
+        const serverError = error.response.data.error || error.response.data.message;
+        if (serverError) {
+          errorMessage = serverError;
         }
+      }
+
+      // Check if the error is related to insufficient inventory
+      const isStockError = errorMessage.toLowerCase().includes('insufficient') &&
+        errorMessage.toLowerCase().includes('inventory');
+
+      if (isStockError) {
+        setStockModalMessage(errorMessage);
+        setStockModalOpen(true);
       } else {
         // Show regular alert for other errors
         alert(
@@ -1383,7 +1384,7 @@ const NewOrder = () => {
                 <tbody>
                   {products.map((product, index) => (
                     <React.Fragment key={product.id}>
-                      <tr 
+                      <tr
                         className={`border-b border-gray-100 ${draggedIndex === index ? 'opacity-50' : ''}`}
                         draggable
                         onDragStart={() => handleDragStart(index)}
@@ -1428,27 +1429,27 @@ const NewOrder = () => {
                                 .filter(prod => {
                                   const searchValue = (productSuggestionValue[product.id] || '').toLowerCase();
                                   const productName = (prod.product_name || '').toLowerCase();
-                                  
+
                                   // Filter out products that are already selected in other rows
                                   const selectedProductIds = products
                                     .filter(p => p.id !== product.id && p.productId)
                                     .map(p => p.productId.toString());
-                                  
+
                                   const isNotSelected = !selectedProductIds.includes(prod.pid.toString());
                                   const matchesSearch = productName.includes(searchValue);
-                                  
+
                                   return isNotSelected && matchesSearch;
                                 })
                                 .map((prod) => (
-                                <button
-                                  key={prod.pid}
-                                  type="button"
-                                  className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 whitespace-nowrap"
-                                  onClick={() => selectProductSuggestion(product.id, prod)}
-                                >
-                                  {prod.product_name}
-                                </button>
-                              ))}
+                                  <button
+                                    key={prod.pid}
+                                    type="button"
+                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 whitespace-nowrap"
+                                    onClick={() => selectProductSuggestion(product.id, prod)}
+                                  >
+                                    {prod.product_name}
+                                  </button>
+                                ))}
                             </div>,
                             document.body
                           )}
@@ -1604,6 +1605,14 @@ const NewOrder = () => {
           </div>
         </form>
       </div>
+
+      {/* Insufficient Stock Modal */}
+      <InsufficientStockModal
+        isOpen={stockModalOpen}
+        onClose={() => setStockModalOpen(false)}
+        onNavigateToInventory={() => navigate('/stock')}
+        message={stockModalMessage}
+      />
     </div>
   );
 };
