@@ -22,6 +22,8 @@ const PackingInventory = () => {
   const [loading, setLoading] = useState(true);
   const [totalPages, setTotalPages] = useState(1);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: '' });
+  const [stockQuantitiesMap, setStockQuantitiesMap] = useState({});
+
 
   const categories = ['All', 'Boxes', 'Bags', 'Tape', 'Paper', 'Plastic Covers'];
   const itemsPerPage = 7;
@@ -33,15 +35,30 @@ const PackingInventory = () => {
   const fetchInventory = async () => {
     try {
       setLoading(true);
-      const response = await getAllInventory(currentPage, itemsPerPage);
-      setInventoryItems(response.data);
-      setTotalPages(response.pagination.totalPages);
+      // Fetch both inventory items and stock quantities
+      const [inventoryResponse, quantitiesResponse] = await Promise.all([
+        getAllInventory(currentPage, itemsPerPage),
+        getInventoryQuantities()
+      ]);
+
+      setInventoryItems(inventoryResponse.data);
+      setTotalPages(inventoryResponse.pagination.totalPages);
+
+      // Create a map for quick lookup by item name
+      const quantitiesMap = {};
+      if (quantitiesResponse.success && Array.isArray(quantitiesResponse.data)) {
+        quantitiesResponse.data.forEach(item => {
+          quantitiesMap[item.item] = item.totalQuantity;
+        });
+      }
+      setStockQuantitiesMap(quantitiesMap);
     } catch (error) {
-      console.error('Error fetching inventory:', error);
+      console.error('Error fetching inventory data:', error);
     } finally {
       setLoading(false);
     }
   };
+
 
   const handleEdit = (item) => {
     setSelectedItem(item);
@@ -179,8 +196,8 @@ const PackingInventory = () => {
           <button
             onClick={() => navigate('/settings/customers')}
             className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${location.pathname === '/settings/customers'
-                ? 'bg-[#0D7C66] text-white'
-                : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
+              ? 'bg-[#0D7C66] text-white'
+              : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
               }`}
           >
             Customers
@@ -309,8 +326,11 @@ const PackingInventory = () => {
                       {item.price ? `₹${parseFloat(item.price).toFixed(2)}` : '-'}
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      <span className="font-semibold text-emerald-600">{item.quantity || 0}</span>
+                      <span className="font-semibold text-emerald-600">
+                        {parseFloat(stockQuantitiesMap[item.name] || 0).toFixed(2)}
+                      </span>
                     </td>
+
                     <td className="px-6 py-4 text-sm text-gray-600">
                       <button
                         ref={(el) => buttonRefs.current[item.id] = el}

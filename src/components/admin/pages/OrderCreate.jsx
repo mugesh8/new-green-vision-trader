@@ -777,16 +777,24 @@ const NewOrder = () => {
   };
 
   const selectProductSuggestion = (id, product) => {
-    // Debug: Log the product data
-    // console.log('Selected product:', product);
-    // console.log('Product packing_type:', product.packing_type);
+    // Check if product is already selected in other rows
+    const isDuplicate = products.some(p => p.id !== id && p.productId === product.pid.toString());
+    
+    if (isDuplicate) {
+      const confirmAdd = window.confirm(
+        `"${product.product_name}" is already added to this order.\n\nDo you want to add it again?`
+      );
+      
+      if (!confirmAdd) {
+        setShowProductSuggestions(prev => ({ ...prev, [id]: false }));
+        return;
+      }
+    }
 
     // Parse the product's packing_type field to get allowed packing types
     const allowedPackingTypes = product.packing_type
       ? product.packing_type.split(',').map(p => p.trim())
       : [];
-
-    //console.log('Parsed allowedPackingTypes:', allowedPackingTypes);
 
     // Determine default packing type and box weight
     let defaultPackingType = '';
@@ -1429,16 +1437,7 @@ const NewOrder = () => {
                                 .filter(prod => {
                                   const searchValue = (productSuggestionValue[product.id] || '').toLowerCase();
                                   const productName = (prod.product_name || '').toLowerCase();
-
-                                  // Filter out products that are already selected in other rows
-                                  const selectedProductIds = products
-                                    .filter(p => p.id !== product.id && p.productId)
-                                    .map(p => p.productId.toString());
-
-                                  const isNotSelected = !selectedProductIds.includes(prod.pid.toString());
-                                  const matchesSearch = productName.includes(searchValue);
-
-                                  return isNotSelected && matchesSearch;
+                                  return productName.includes(searchValue);
                                 })
                                 .map((prod) => (
                                   <button
