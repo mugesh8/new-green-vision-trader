@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { ArrowLeft, FileDown } from 'lucide-react';
+import { ArrowLeft, FileDown, FileText } from 'lucide-react';
 import { getOrderById, getDraftById } from '../../../api/orderApi';
 import * as XLSX from 'xlsx';
 
@@ -306,6 +306,140 @@ const OrderView = () => {
         XLSX.writeFile(workbook, fileName);
     };
 
+    // Export to PDF function
+    const handleExportToPDF = () => {
+        const orderId = isDraft ? formattedData.id : formattedData.oid;
+        const customerName = formattedData.customer_name ?? '—';
+        const createdDate = formattedData.createdAt
+            ? new Date(formattedData.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' })
+            : '—';
+
+        const itemsRows = (formattedData.items || []).map((item, i) => `
+            <tr style="background:${i % 2 === 0 ? '#f9fafb' : '#ffffff'}">
+                <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#111827">${item.product_name || item.product || '-'}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#374151">${item.packing_type || '-'}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#374151;text-align:center">${item.num_boxes || 0}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#374151;text-align:right">${parseFloat(item.box_weight || 0).toFixed(2)}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#374151;text-align:right">${parseFloat(item.net_weight || 0).toFixed(2)}</td>
+                <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#374151;text-align:right">${parseFloat(item.gross_weight || 0).toFixed(2)}</td>
+            </tr>
+        `).join('');
+
+        const packingRows = packingSummary.groups.map((g, i) => `
+            <tr style="background:${i % 2 === 0 ? '#e8f5f1' : '#f0f4f3'}">
+                <td style="padding:8px 12px;border-bottom:1px solid #d0e0db;font-size:13px;color:#0d5c4d">${g.type}</td>
+                <td style="padding:8px 12px;border-bottom:1px solid #d0e0db;font-size:13px;color:#0d5c4d;text-align:right">${g.count}</td>
+            </tr>
+        `).join('');
+
+        const statusColor = formattedData.order_status?.toLowerCase() === 'pending' ? '#92400e' : '#065f46';
+        const statusBg = formattedData.order_status?.toLowerCase() === 'pending' ? '#fef3c7' : '#d1fae5';
+
+        const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Order Details - ${orderId}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #fff; color: #111827; padding: 32px; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; border-bottom: 3px solid #10B981; padding-bottom: 16px; }
+        .company-name { font-size: 22px; font-weight: 800; color: #065f46; }
+        .company-sub { font-size: 11px; color: #6b7280; margin-top: 2px; }
+        .doc-info { text-align: right; }
+        .doc-title { font-size: 18px; font-weight: 700; color: #111827; }
+        .doc-id { font-size: 13px; color: #6b7280; margin-top: 4px; }
+        .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+        .summary-item label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 4px; }
+        .summary-item span { font-size: 14px; font-weight: 600; color: #111827; }
+        .status-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: ${statusBg}; color: ${statusColor}; }
+        .section-title { font-size: 15px; font-weight: 700; color: #111827; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 2px solid #d1fae5; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+        thead tr { background: #065f46; }
+        thead th { padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 700; color: #ffffff; text-transform: uppercase; letter-spacing: 0.5px; }
+        thead th.num { text-align: center; }
+        thead th.right { text-align: right; }
+        tfoot tr { background: #d1fae5; }
+        tfoot td { padding: 10px 12px; font-size: 13px; font-weight: 700; color: #065f46; }
+        tfoot td.right { text-align: right; }
+        .packing-header { background: #d4f4e8; padding: 10px 12px; display: flex; justify-content: space-between; border-bottom: 1px solid #d0e0db; font-size: 13px; font-weight: 600; color: #0d5c4d; }
+        .packing-total { background: #d4f4e8; padding: 10px 12px; display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; color: #0d5c4d; border-top: 2px solid #10B981; }
+        .packing-table { border: 1px solid #d0e0db; border-radius: 8px; overflow: hidden; width: 50%; margin-bottom: 24px; }
+        .packing-headers { border-bottom: 1px solid #d0e0db; }
+        .footer { margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 12px; text-align: center; font-size: 11px; color: #9ca3af; }
+        @media print { body { padding: 16px; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <div class="company-name">Green Vision Traders</div>
+            <div class="company-sub">Order Management System</div>
+        </div>
+        <div class="doc-info">
+            <div class="doc-title">${isDraft ? 'Draft' : 'Order'} Details</div>
+            <div class="doc-id">${isDraft ? 'Draft ID' : 'Order ID'}: ${orderId}</div>
+            <div class="doc-id">Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' })}</div>
+        </div>
+    </div>
+
+    <div class="summary-grid">
+        <div class="summary-item"><label>${isDraft ? 'Draft ID' : 'Order ID'}</label><span>${orderId}</span></div>
+        <div class="summary-item"><label>Customer Name</label><span>${customerName}</span></div>
+        <div class="summary-item"><label>Customer ID</label><span>${formattedData.customer_id ?? '—'}</span></div>
+        <div class="summary-item"><label>${isDraft ? 'Status' : 'Order Status'}</label><span class="status-badge">${formattedData.order_status}</span></div>
+        <div class="summary-item"><label>Created Date</label><span>${createdDate}</span></div>
+    </div>
+
+    <div class="section-title">Products</div>
+    <table>
+        <thead>
+            <tr>
+                <th>Product</th>
+                <th>Type of Packing</th>
+                <th class="num">No. of Boxes/Bags</th>
+                <th class="right">Box Weight (kg)</th>
+                <th class="right">Net Weight (kg)</th>
+                <th class="right">Gross Weight (kg)</th>
+            </tr>
+        </thead>
+        <tbody>${itemsRows}</tbody>
+        <tfoot>
+            <tr>
+                <td colspan="4"><b>Total</b></td>
+                <td class="right">${totals.totalNetWeight.toFixed(2)} kg</td>
+                <td class="right">${totals.totalGrossWeight.toFixed(2)} kg</td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <div class="section-title">Packing Summary</div>
+    <div class="packing-table">
+        <div class="packing-headers">
+            <div class="packing-header"><span>Customer Name</span><span>${customerName}</span></div>
+            <div class="packing-header"><span>Total Net Weight</span><span>${totals.totalNetWeight.toFixed(2)} Kg</span></div>
+            <div class="packing-header"><span>Total Gross Weight</span><span>${totals.totalGrossWeight.toFixed(2)} Kg</span></div>
+        </div>
+        <table>
+            <tbody>${packingRows}</tbody>
+        </table>
+        <div class="packing-total"><span>Total No. of Pcs</span><span>${packingSummary.totalPcs}</span></div>
+    </div>
+
+    <div class="footer">Green Vision Traders &mdash; Confidential &mdash; ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+
+    <script>window.onload = function() { window.print(); };<\/script>
+</body>
+</html>`;
+
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+            printWindow.document.write(htmlContent);
+            printWindow.document.close();
+        }
+    };
+
     return (
         <div className="min-h-screen bg-gray-50 p-4 md:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto">
@@ -332,6 +466,13 @@ const OrderView = () => {
                         <h1 className="text-2xl font-bold text-gray-900">{isDraft ? 'Draft' : 'Order'} Details</h1>
                     </div>
                     <div className="flex gap-3">
+                        <button
+                            onClick={handleExportToPDF}
+                            className="px-6 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors duration-200 font-medium flex items-center gap-2"
+                        >
+                            <FileText className="w-4 h-4" />
+                            Export to PDF
+                        </button>
                         <button
                             onClick={handleExportToExcel}
                             className="px-6 py-2.5 bg-[#10B981] text-white rounded-lg hover:bg-[#059669] transition-colors duration-200 font-medium flex items-center gap-2"

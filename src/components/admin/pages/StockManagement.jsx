@@ -18,7 +18,7 @@ const StockManagement = () => {
   const navigate = useNavigate();
   const [selectedItems, setSelectedItems] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All Status');
+  const [statusFilter, setStatusFilter] = useState('All Types');
   const [productFilter, setProductFilter] = useState('All Products');
   const [dateFilter, setDateFilter] = useState('Last 7 days');
   const [currentPage, setCurrentPage] = useState(1);
@@ -919,6 +919,24 @@ const StockManagement = () => {
     inventoryStartIndex + inventoryItemsPerPage
   );
 
+  // Derived data for Stock Management tab (search + type filter + pagination)
+  const stockItemsPerPage = 10;
+  const filteredStock = stockData.filter(item => {
+    const term = searchTerm.toLowerCase();
+    const matchesSearch = !term ||
+      (item.order_id || '').toLowerCase().includes(term) ||
+      (item.name || '').toLowerCase().includes(term) ||
+      (item.products || '').toLowerCase().includes(term) ||
+      (item.type || '').toLowerCase().includes(term);
+    const matchesType = statusFilter === 'All Types' ||
+      (item.type || '').toLowerCase() === statusFilter.toLowerCase();
+    return matchesSearch && matchesType;
+  });
+  const stockTotalPages = Math.max(1, Math.ceil(filteredStock.length / stockItemsPerPage));
+  const effectiveStockPage = Math.min(currentPage, stockTotalPages);
+  const stockStartIndex = (effectiveStockPage - 1) * stockItemsPerPage;
+  const paginatedStock = filteredStock.slice(stockStartIndex, stockStartIndex + stockItemsPerPage);
+
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6 lg:p-8">
 
@@ -989,7 +1007,7 @@ const StockManagement = () => {
                 type="text"
                 placeholder="Search products, orders..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
                 className="w-full pl-12 pr-4 py-3 bg-[#F0F4F3] border-none rounded-xl text-[#0D5C4D] placeholder-[#6B8782] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
               />
             </div>
@@ -997,7 +1015,7 @@ const StockManagement = () => {
               <div className="relative">
                 <select
                   value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
+                  onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
                   className="appearance-none px-4 py-3 pr-10 bg-[#F0F4F3] border-none rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] cursor-pointer"
                 >
                   <option>All Types</option>
@@ -1047,14 +1065,14 @@ const StockManagement = () => {
                         Loading stock data...
                       </td>
                     </tr>
-                  ) : stockData.length === 0 ? (
+                  ) : filteredStock.length === 0 ? (
                     <tr>
                       <td colSpan="6" className="px-6 py-8 text-center text-[#6B8782]">
-                        No stock data available
+                        No stock data found
                       </td>
                     </tr>
                   ) : (
-                    stockData.map((item, index) => (
+                    paginatedStock.map((item, index) => (
                       <tr key={item.sid || index} className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'
                         }`}>
                         <td className="px-6 py-4 text-sm font-medium text-[#0D5C4D]">
@@ -1087,24 +1105,44 @@ const StockManagement = () => {
             {/* Pagination */}
             <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
               <div className="text-sm text-[#6B8782]">
-                Showing page {currentPage} of 1
+                {filteredStock.length === 0
+                  ? 'No records'
+                  : `Showing ${stockStartIndex + 1}–${Math.min(stockStartIndex + stockItemsPerPage, filteredStock.length)} of ${filteredStock.length} records`}
               </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
+                  disabled={effectiveStockPage === 1}
                   className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
+                {Array.from({ length: stockTotalPages }, (_, i) => i + 1).map(page => {
+                  const showPage =
+                    page === 1 ||
+                    page === stockTotalPages ||
+                    (page >= effectiveStockPage - 1 && page <= effectiveStockPage + 1);
+                  const showEllipsis =
+                    (page === effectiveStockPage - 2 && effectiveStockPage > 3) ||
+                    (page === effectiveStockPage + 2 && effectiveStockPage < stockTotalPages - 2);
+                  if (showEllipsis) return <button key={`ellipsis-${page}`} className="px-3 py-2 text-[#6B8782]">...</button>;
+                  if (!showPage) return null;
+                  return (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${effectiveStockPage === page
+                        ? 'bg-[#0D8568] text-white'
+                        : 'text-[#6B8782] hover:bg-[#D0E0DB]'
+                        }`}
+                    >
+                      {page}
+                    </button>
+                  );
+                })}
                 <button
-                  className="px-4 py-2 rounded-lg font-medium bg-[#0D8568] text-white"
-                >
-                  1
-                </button>
-                <button
-                  onClick={() => setCurrentPage(prev => prev + 1)}
-                  disabled={currentPage >= 1}
+                  onClick={() => setCurrentPage(prev => Math.min(stockTotalPages, prev + 1))}
+                  disabled={effectiveStockPage === stockTotalPages}
                   className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ChevronRight className="w-4 h-4" />

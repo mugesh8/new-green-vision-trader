@@ -26,6 +26,8 @@ const parseTimeToHHMM = (str) => {
   return '';
 };
 
+const ABSENT_STATUSES = ['informed leave', 'uninformed leave', 'leave', 'voluntary leave', 'normal absent', 'Absent'];
+
 const DriveAttendance = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('attendance');
@@ -109,24 +111,34 @@ const DriveAttendance = () => {
           }
         ]);
 
-        const transformedDrivers = driverData.map(driver => ({
-          id: driver.did,
-          name: driver.driver_name,
-          driverId: driver.driver_id,
-          phone: driver.phone_number,
-          avatar: driver.driver_name.split(' ').map(n => n[0]).join('').toUpperCase(),
-          avatarBg: 'bg-teal-700',
-          profileImage: driver.profile_image,
-          deliveryType: driver.delivery_type || 'N/A',
-          deliveryTypeBg: driver.delivery_type === 'LOCAL GRADE ORDER' ? 'bg-blue-100' : driver.delivery_type === 'BOX ORDER' ? 'bg-orange-100' : 'bg-purple-100',
-          deliveryTypeText: driver.delivery_type === 'LOCAL GRADE ORDER' ? 'text-blue-700' : driver.delivery_type === 'BOX ORDER' ? 'text-orange-700' : 'text-purple-700',
-          checkIn: parseTimeToHHMM(driver.check_in_time) || '',
-          checkOut: parseTimeToHHMM(driver.check_out_time) || '',
-          status: driver.attendance_status || 'Not Marked',
-          statusColor: driver.attendance_status === 'Present' ? 'bg-[#10B981]' : driver.attendance_status === 'Absent' ? 'bg-red-500' : 'bg-orange-500',
-          action: driver.check_out_time ? 'completed' : driver.check_in_time ? 'checkout' : 'markPresent',
-          isPresent: driver.attendance_status === 'Present' && !driver.check_out_time
-        }));
+        const transformedDrivers = driverData.map(driver => {
+          const status = driver.attendance_status || 'Not Marked';
+          let statusColor = 'bg-orange-500';
+          if (status === 'Present') {
+            statusColor = 'bg-[#10B981]';
+          } else if (ABSENT_STATUSES.includes(status)) {
+            statusColor = 'bg-red-500';
+          }
+
+          return {
+            id: driver.did,
+            name: driver.driver_name,
+            driverId: driver.driver_id,
+            phone: driver.phone_number,
+            avatar: driver.driver_name.split(' ').map(n => n[0]).join('').toUpperCase(),
+            avatarBg: 'bg-teal-700',
+            profileImage: driver.profile_image,
+            deliveryType: driver.delivery_type || 'N/A',
+            deliveryTypeBg: driver.delivery_type === 'LOCAL GRADE ORDER' ? 'bg-blue-100' : driver.delivery_type === 'BOX ORDER' ? 'bg-orange-100' : 'bg-purple-100',
+            deliveryTypeText: driver.delivery_type === 'LOCAL GRADE ORDER' ? 'text-blue-700' : driver.delivery_type === 'BOX ORDER' ? 'text-orange-700' : 'text-purple-700',
+            checkIn: parseTimeToHHMM(driver.check_in_time) || '',
+            checkOut: parseTimeToHHMM(driver.check_out_time) || '',
+            status: status,
+            statusColor: statusColor,
+            action: driver.check_out_time ? 'completed' : driver.check_in_time ? 'checkout' : 'markPresent',
+            isPresent: status === 'Present' && !driver.check_out_time
+          };
+        });
 
         setDrivers(transformedDrivers);
       }
@@ -148,7 +160,7 @@ const DriveAttendance = () => {
     }
   };
 
-  const handleAction = async (action, driverId) => {
+  const handleAction = async (action, driverId, absenceType = null) => {
     try {
       const driver = drivers.find(d => d.id === driverId);
       const timeForApi = (hhmm) => (hhmm && hhmm.includes(':')) ? `${hhmm}:00` : (hhmm || new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }));
@@ -159,7 +171,7 @@ const DriveAttendance = () => {
         const time = driver?.checkIn ? timeForApi(driver.checkIn) : getCurrentTimeHHMM() + ':00';
         await markPresent(driverId, { time });
       } else if (action === 'markAbsent') {
-        await markAbsent(driverId);
+        await markAbsent(driverId, { type: absenceType || 'normal absent' });
       }
       await fetchAttendanceData();
     } catch (error) {
@@ -388,8 +400,8 @@ const DriveAttendance = () => {
                       <button
                         type="button"
                         onClick={() => handleSaveCheckIn(driver.id)}
-                        disabled={driver.status === 'Absent' || !!driver.checkOut}
-                        className={`px-2 py-1 rounded text-xs font-medium ${!(driver.status === 'Absent' || driver.checkOut) ? 'bg-[#0D7C66] text-white hover:bg-[#0a6354]' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                        disabled={ABSENT_STATUSES.includes(driver.status) || !!driver.checkOut}
+                        className={`px-2 py-1 rounded text-xs font-medium ${!(ABSENT_STATUSES.includes(driver.status) || driver.checkOut) ? 'bg-[#0D7C66] text-white hover:bg-[#0a6354]' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
                         title="Save check-in time"
                       >
                         ✓
@@ -429,8 +441,8 @@ const DriveAttendance = () => {
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleAction('markPresent', driver.id)}
-                        disabled={driver.status === 'Present' || driver.status === 'Absent' || !!driver.checkOut}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${driver.status === 'Present' || driver.status === 'Absent' || !!driver.checkOut
+                        disabled={driver.status === 'Present' || ABSENT_STATUSES.includes(driver.status) || !!driver.checkOut}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${driver.status === 'Present' || ABSENT_STATUSES.includes(driver.status) || !!driver.checkOut
                           ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                           : 'bg-[#10B981] hover:bg-[#059669] text-white'
                           }`}
@@ -447,16 +459,33 @@ const DriveAttendance = () => {
                       >
                         Checkout
                       </button>
-                      <button
-                        onClick={() => handleAction('markAbsent', driver.id)}
-                        disabled={driver.status === 'Absent' || driver.isPresent || !!driver.checkOut}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${driver.status === 'Absent' || driver.isPresent || !!driver.checkOut
-                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                          : 'bg-orange-500 hover:bg-orange-600 text-white'
-                          }`}
-                      >
-                        Absent
-                      </button>
+                      <div className="relative">
+                        <select
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              handleAction('markAbsent', driver.id, e.target.value);
+                              e.target.value = ""; // Reset dropdown after selection
+                            }
+                          }}
+                          disabled={driver.status === 'Present' || ABSENT_STATUSES.includes(driver.status) || !!driver.checkOut}
+                          className={`appearance-none px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer min-w-[100px] pr-8 ${driver.status === 'Present' || ABSENT_STATUSES.includes(driver.status) || !!driver.checkOut
+                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            : 'bg-orange-500 hover:bg-orange-600 text-white'
+                            }`}
+                          value=""
+                        >
+                          <option value="" disabled>Absent</option>
+                          <option value="informed leave">Informed Leave</option>
+                          <option value="uninformed leave">Uninformed Leave</option>
+                          <option value="leave">Leave</option>
+                          <option value="voluntary leave">Voluntary Leave</option>
+                          <option value="normal absent">Normal Absent</option>
+                        </select>
+                        <ChevronDown className={`absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none ${driver.status === 'Present' || ABSENT_STATUSES.includes(driver.status) || !!driver.checkOut
+                          ? 'text-gray-400'
+                          : 'text-white'
+                          }`} size={14} />
+                      </div>
                     </div>
                   </td>
                 </tr>

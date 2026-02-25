@@ -15,6 +15,8 @@ import {
 import ConfirmDeleteModal from '../../common/ConfirmDeleteModal';
 import { getAllDrivers, deleteDriver } from '../../../api/driverApi';
 import * as XLSX from 'xlsx-js-style';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const DriverManagement = () => {
   const navigate = useNavigate();
@@ -29,6 +31,8 @@ const DriverManagement = () => {
   const dropdownRef = useRef(null);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, driverId: null, driverName: '' });
   const [drivers, setDrivers] = useState([]);
+  const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+  const exportDropdownRef = useRef(null);
   const itemsPerPage = 7;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -50,6 +54,17 @@ const DriverManagement = () => {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
+  }, []);
+
+  // Close export dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (exportDropdownRef.current && !exportDropdownRef.current.contains(event.target)) {
+        setExportDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   // Fetch drivers from API
@@ -385,6 +400,82 @@ const DriverManagement = () => {
     }
   };
 
+  // Export drivers to PDF
+  const handleExportPDF = async () => {
+    if (drivers.length === 0) {
+      alert('No drivers to export');
+      return;
+    }
+    setExportDropdownOpen(false);
+    try {
+      const { getDriverById } = await import('../../../api/driverApi');
+      const detailedDrivers = await Promise.all(
+        drivers.map(async (driver) => {
+          try {
+            const response = await getDriverById(driver.id);
+            return response.data || response;
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      const validDrivers = detailedDrivers.filter(Boolean);
+
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+      // Title
+      doc.setFontSize(18);
+      doc.setTextColor(13, 92, 77);
+      doc.text('Driver Management Report', 14, 18);
+
+      // Date
+      doc.setFontSize(10);
+      doc.setTextColor(100, 100, 100);
+      doc.text(`Generated: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`, 14, 26);
+      doc.text(`Total Drivers: ${validDrivers.length}`, 14, 32);
+
+      const head = [[
+        'Name', 'Phone', 'Email', 'Delivery Type', 'Vehicle', 'Veh. No.', 'Capacity', 'Status', 'Working Hrs'
+      ]];
+
+      const body = validDrivers.map(driver => [
+        driver.driver_name || driver.name || 'N/A',
+        driver.phone_number || driver.phone || 'N/A',
+        driver.email || 'N/A',
+        driver.delivery_type || 'N/A',
+        driver.available_vehicle || driver.vehicle_type || 'N/A',
+        driver.vehicle_number || 'N/A',
+        driver.capacity ? `${driver.capacity} T` : 'N/A',
+        driver.status || 'N/A',
+        driver.working_hours ? `${driver.working_hours} hrs` : 'N/A',
+      ]);
+
+      autoTable(doc, {
+        head,
+        body,
+        startY: 38,
+        styles: { fontSize: 8, cellPadding: 3, valign: 'middle' },
+        headStyles: {
+          fillColor: [13, 133, 104],
+          textColor: 255,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        alternateRowStyles: { fillColor: [240, 244, 243] },
+        columnStyles: { 0: { fontStyle: 'bold' } },
+        margin: { left: 14, right: 14 },
+        tableLineColor: [208, 224, 219],
+        tableLineWidth: 0.3,
+      });
+
+      doc.save(`drivers_report_${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      alert('Failed to export PDF. Please try again.');
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       {/* Header Tabs */}
@@ -405,13 +496,36 @@ const DriverManagement = () => {
         </div>
 
         <div className="flex gap-3">
-          <button
-            onClick={handleExportDrivers}
-            className="px-5 py-2.5 bg-[#1DB890] hover:bg-[#19a57e] text-white rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm text-sm"
-          >
-            <Download className="w-4 h-4" />
-            Export Excel
-          </button>
+          {/* Export Dropdown */}
+          <div className="relative" ref={exportDropdownRef}>
+            <button
+              onClick={() => setExportDropdownOpen(prev => !prev)}
+              className="px-5 py-2.5 bg-[#1DB890] hover:bg-[#19a57e] text-white rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm text-sm"
+            >
+              <Download className="w-4 h-4" />
+              Export
+              <ChevronDown className="w-4 h-4" />
+            </button>
+            {exportDropdownOpen && (
+              <div className="absolute right-0 mt-2 w-44 bg-white rounded-xl shadow-lg border border-[#D0E0DB] z-50 overflow-hidden">
+                <button
+                  onClick={() => { handleExportDrivers(); setExportDropdownOpen(false); }}
+                  className="w-full text-left px-4 py-3 text-sm text-[#0D5C4D] hover:bg-[#F0F4F3] transition-colors flex items-center gap-2 font-medium"
+                >
+                  <Download className="w-4 h-4 text-emerald-600" />
+                  Export Excel
+                </button>
+                <div className="border-t border-[#D0E0DB]" />
+                <button
+                  onClick={handleExportPDF}
+                  className="w-full text-left px-4 py-3 text-sm text-[#0D5C4D] hover:bg-[#F0F4F3] transition-colors flex items-center gap-2 font-medium"
+                >
+                  <Download className="w-4 h-4 text-red-500" />
+                  Export PDF
+                </button>
+              </div>
+            )}
+          </div>
           <button
             onClick={() => navigate('/drivers/add')}
             className="px-5 py-2.5 bg-[#0D7C66] hover:bg-[#0a6354] text-white rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm text-sm"

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, ChevronDown, FileText, Users, Wallet, Briefcase, FileBarChart, Download } from 'lucide-react';
+import { Calendar, ChevronDown, FileText, Users, Wallet, Briefcase, FileBarChart } from 'lucide-react';
 import { getAllOrders } from '../../../api/orderApi';
 import { getAllFarmers } from '../../../api/farmerApi';
 import { getAllSuppliers } from '../../../api/supplierApi';
@@ -351,7 +351,7 @@ const ReportManagement = () => {
 
       {/* Filters */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">From Date</label>
             <input
@@ -385,17 +385,6 @@ const ReportManagement = () => {
               </select>
               <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none" />
             </div>
-          </div>
-          <div>
-            <button
-              onClick={() => {
-                alert('Dashboard Export feature coming soon!');
-              }}
-              className="w-full bg-emerald-500 hover:bg-emerald-600 text-white border border-transparent px-6 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
-            >
-              <Download size={18} />
-              Export Summary
-            </button>
           </div>
         </div>
       </div>

@@ -17,7 +17,7 @@ const parseTimeToHHMM = (str) => {
   if (match) {
     let h = parseInt(match[1], 10);
     const m = match[2];
-    if (match[4]) {
+    if (match[4]) { 
       if (match[4].toUpperCase() === 'PM' && h < 12) h += 12;
       if (match[4].toUpperCase() === 'AM' && h === 12) h = 0;
     }
@@ -26,6 +26,8 @@ const parseTimeToHHMM = (str) => {
   if (/^\d{1,2}:\d{2}$/.test(trimmed)) return trimmed.length === 4 ? `0${trimmed}` : trimmed;
   return '';
 };
+
+const ABSENT_STATUSES = ['informed leave', 'uninformed leave', 'leave', 'voluntary leave', 'normal absent', 'Absent'];
 
 const LabourAttendance = () => {
   const navigate = useNavigate();
@@ -85,7 +87,7 @@ const LabourAttendance = () => {
     }
   };
 
-  const handleAction = async (action, labourId) => {
+  const handleAction = async (action, labourId, absenceType = null) => {
     try {
       const labour = labours.find(l => l.id === labourId);
       const timeForApi = (hhmm) => (hhmm && hhmm.includes(':')) ? `${hhmm}:00` : (hhmm || new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }));
@@ -96,7 +98,7 @@ const LabourAttendance = () => {
         const time = labour?.checkIn ? timeForApi(labour.checkIn) : getCurrentTimeHHMM() + ':00';
         await markPresent(labourId, { date: selectedDate, time });
       } else if (action === 'markAbsent') {
-        await markAbsent(labourId, { date: selectedDate });
+        await markAbsent(labourId, { date: selectedDate, type: absenceType || 'normal absent' });
       }
       await fetchData();
     } catch (error) {
@@ -162,6 +164,11 @@ const LabourAttendance = () => {
   const getStatusColor = (status) => {
     switch (status) {
       case 'Present': return 'bg-[#10B981]';
+      case 'informed leave':
+      case 'uninformed leave':
+      case 'leave':
+      case 'voluntary leave':
+      case 'normal absent':
       case 'Absent': return 'bg-red-500';
       case 'Half Day': return 'bg-orange-500';
       default: return 'bg-gray-400';
@@ -181,8 +188,8 @@ const LabourAttendance = () => {
         <button
           onClick={() => handleTabChange('labourList')}
           className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${activeTab === 'labourList'
-              ? 'bg-[#10B981] text-white'
-              : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
+            ? 'bg-[#10B981] text-white'
+            : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
             }`}
         >
           Labour List
@@ -190,8 +197,8 @@ const LabourAttendance = () => {
         <button
           onClick={() => handleTabChange('attendance')}
           className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${activeTab === 'attendance'
-              ? 'bg-[#0D7C66] text-white'
-              : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
+            ? 'bg-[#0D7C66] text-white'
+            : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
             }`}
         >
           Attendance
@@ -199,8 +206,8 @@ const LabourAttendance = () => {
         <button
           onClick={() => handleTabChange('excessPay')}
           className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${activeTab === 'excessPay'
-              ? 'bg-[#10B981] text-white'
-              : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
+            ? 'bg-[#10B981] text-white'
+            : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
             }`}
         >
           Excess Pay
@@ -208,8 +215,8 @@ const LabourAttendance = () => {
         <button
           onClick={() => handleTabChange('dailyPayout')}
           className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${activeTab === 'dailyPayout'
-              ? 'bg-[#10B981] text-white'
-              : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
+            ? 'bg-[#10B981] text-white'
+            : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
             }`}
         >
           Labour Daily Payout
@@ -327,8 +334,8 @@ const LabourAttendance = () => {
                       <button
                         type="button"
                         onClick={() => handleSaveCheckIn(labour.id)}
-                        disabled={labour.status === 'Absent' || !!labour.checkOut}
-                        className={`px-2 py-1 rounded text-xs font-medium ${!(labour.status === 'Absent' || labour.checkOut) ? 'bg-[#0D7C66] text-white hover:bg-[#0a6354]' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                        disabled={ABSENT_STATUSES.includes(labour.status) || !!labour.checkOut}
+                        className={`px-2 py-1 rounded text-xs font-medium ${!(ABSENT_STATUSES.includes(labour.status) || labour.checkOut) ? 'bg-[#0D7C66] text-white hover:bg-[#0a6354]' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
                         title="Save check-in time"
                       >
                         ✓
@@ -368,10 +375,10 @@ const LabourAttendance = () => {
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleAction('markPresent', labour.id)}
-                        disabled={labour.status === 'Present' || labour.status === 'Absent' || !!labour.checkOut}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${labour.status === 'Present' || labour.status === 'Absent' || !!labour.checkOut
-                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                            : 'bg-[#10B981] hover:bg-[#059669] text-white'
+                        disabled={labour.status === 'Present' || ABSENT_STATUSES.includes(labour.status) || !!labour.checkOut}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${labour.status === 'Present' || ABSENT_STATUSES.includes(labour.status) || !!labour.checkOut
+                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                          : 'bg-[#10B981] hover:bg-[#059669] text-white'
                           }`}
                       >
                         Present
@@ -380,22 +387,39 @@ const LabourAttendance = () => {
                         onClick={() => handleAction('checkout', labour.id)}
                         disabled={!labour.checkIn || labour.checkOut}
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${!labour.checkIn || labour.checkOut
-                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                            : 'bg-red-500 hover:bg-red-600 text-white'
+                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                          : 'bg-red-500 hover:bg-red-600 text-white'
                           }`}
                       >
                         Checkout
                       </button>
-                      <button
-                        onClick={() => handleAction('markAbsent', labour.id)}
-                        disabled={labour.status === 'Absent' || labour.status === 'Present' || !!labour.checkOut}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${labour.status === 'Absent' || labour.status === 'Present' || !!labour.checkOut
+                      <div className="relative">
+                        <select
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              handleAction('markAbsent', labour.id, e.target.value);
+                              e.target.value = ""; // Reset dropdown after selection
+                            }
+                          }}
+                          disabled={labour.status === 'Present' || ABSENT_STATUSES.includes(labour.status) || !!labour.checkOut}
+                          className={`appearance-none px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer min-w-[100px] pr-8 ${labour.status === 'Present' || ABSENT_STATUSES.includes(labour.status) || !!labour.checkOut
                             ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                             : 'bg-orange-500 hover:bg-orange-600 text-white'
-                          }`}
-                      >
-                        Absent
-                      </button>
+                            }`}
+                          value=""
+                        >
+                          <option value="" disabled>Absent</option>
+                          <option value="informed leave">Informed Leave</option>
+                          <option value="uninformed leave">Uninformed Leave</option>
+                          <option value="leave">Leave</option>
+                          <option value="voluntary leave">Voluntary Leave</option>
+                          <option value="normal absent">Normal Absent</option>
+                        </select>
+                        <ChevronDown className={`absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none ${labour.status === 'Present' || ABSENT_STATUSES.includes(labour.status) || !!labour.checkOut
+                          ? 'text-gray-400'
+                          : 'text-white'
+                          }`} size={14} />
+                      </div>
                     </div>
                   </td>
                 </tr>
