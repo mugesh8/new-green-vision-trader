@@ -83,3 +83,12 @@ export const updateCheckOutTime = async (labourId, data = {}) => {
     throw error.response?.data || error.message;
   }
 };
+
+export const deleteAttendanceRecord = async (attendanceId) => {
+  try {
+    const response = await api.delete(`/labour-attendance/${attendanceId}`);
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || error.message;
+  }
+};
