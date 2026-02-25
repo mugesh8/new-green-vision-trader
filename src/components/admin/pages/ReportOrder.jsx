@@ -267,12 +267,12 @@ const ReportOrder = () => {
   const handleExportFilteredExcel = () => {
     const wb = XLSX.utils.book_new();
     const data = [[
-      { v: 'Order ID', s: { font: { bold: true }, fill: { fgColor: { rgb: '4472C4' } }, font: { color: { rgb: 'FFFFFF' } } } },
-      { v: 'Customer', s: { font: { bold: true }, fill: { fgColor: { rgb: '4472C4' } }, font: { color: { rgb: 'FFFFFF' } } } },
-      { v: 'Date', s: { font: { bold: true }, fill: { fgColor: { rgb: '4472C4' } }, font: { color: { rgb: 'FFFFFF' } } } },
-      { v: 'Items', s: { font: { bold: true }, fill: { fgColor: { rgb: '4472C4' } }, font: { color: { rgb: 'FFFFFF' } } } },
-      { v: 'Value (₹)', s: { font: { bold: true }, fill: { fgColor: { rgb: '4472C4' } }, font: { color: { rgb: 'FFFFFF' } } } },
-      { v: 'Status', s: { font: { bold: true }, fill: { fgColor: { rgb: '4472C4' } }, font: { color: { rgb: 'FFFFFF' } } } }
+      { v: 'Order ID', s: { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '4472C4' } } } },
+      { v: 'Customer', s: { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '4472C4' } } } },
+      { v: 'Date', s: { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '4472C4' } } } },
+      { v: 'Items', s: { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '4472C4' } } } },
+      { v: 'Value (₹)', s: { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '4472C4' } } } },
+      { v: 'Status', s: { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '4472C4' } } } }
     ]];
 
     filteredOrders.forEach(order => {

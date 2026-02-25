@@ -29,10 +29,12 @@ const parseTimeToHHMM = (str) => {
 
 const ABSENT_STATUSES = ['informed leave', 'uninformed leave', 'leave', 'voluntary leave', 'normal absent', 'Absent'];
 
+const getTodayYYYYMMDD = () => new Date().toISOString().split('T')[0];
+
 const LabourAttendance = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('attendance');
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(getTodayYYYYMMDD());
   const [filters, setFilters] = useState({ status: 'All' });
   const [searchQuery, setSearchQuery] = useState('');
   const [stats, setStats] = useState({
@@ -84,6 +86,8 @@ const LabourAttendance = () => {
       navigate('/labour/excess-pay');
     } else if (tab === 'dailyPayout') {
       navigate('/labour/daily-payout');
+    } else if (tab === 'attendanceEdit') {
+      navigate('/labour/attendance/edit');
     }
   };
 
@@ -204,6 +208,15 @@ const LabourAttendance = () => {
           Attendance
         </button>
         <button
+          onClick={() => handleTabChange('attendanceEdit')}
+          className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${activeTab === 'attendanceEdit'
+            ? 'bg-[#0D7C66] text-white'
+            : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
+            }`}
+        >
+          Attendance Edit
+        </button>
+        <button
           onClick={() => handleTabChange('excessPay')}
           className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${activeTab === 'excessPay'
             ? 'bg-[#10B981] text-white'
@@ -271,10 +284,16 @@ const LabourAttendance = () => {
           <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#6B8782] pointer-events-none" size={16} />
         </div>
 
-        {/* Date Display (Read Only) */}
-        <div className="bg-white border border-[#D0E0DB] rounded-lg px-4 py-2.5 text-sm text-[#0D5C4D] min-w-[140px] flex items-center gap-2">
-          <Calendar size={16} className="text-[#6B8782]" />
-          <span>{new Date().toLocaleDateString('en-GB')}</span>
+        {/* Date Select (today or future) */}
+        <div className="flex items-center gap-2 min-w-[160px]">
+          <Calendar size={16} className="text-[#6B8782] flex-shrink-0" />
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            min={getTodayYYYYMMDD()}
+            className="flex-1 bg-white border border-[#D0E0DB] rounded-lg px-3 py-2.5 text-sm text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+          />
         </div>
       </div>
 

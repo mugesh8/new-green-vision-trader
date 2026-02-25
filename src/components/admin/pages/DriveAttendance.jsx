@@ -28,8 +28,11 @@ const parseTimeToHHMM = (str) => {
 
 const ABSENT_STATUSES = ['informed leave', 'uninformed leave', 'leave', 'voluntary leave', 'normal absent', 'Absent'];
 
+const getTodayYYYYMMDD = () => new Date().toISOString().split('T')[0];
+
 const DriveAttendance = () => {
   const navigate = useNavigate();
+  const [attendanceDate, setAttendanceDate] = useState(getTodayYYYYMMDD);
   const [activeTab, setActiveTab] = useState('attendance');
   const [filters, setFilters] = useState({
     status: 'All',
@@ -69,12 +72,13 @@ const DriveAttendance = () => {
     fetchAttendanceData();
     const interval = setInterval(fetchAttendanceData, 60000);
     return () => clearInterval(interval);
-  }, [filters]);
+  }, [filters, attendanceDate]);
 
   const fetchAttendanceData = async () => {
     try {
       setLoading(true);
       const params = {
+        date: attendanceDate,
         status: filters.status !== 'All' ? filters.status : undefined,
         delivery_type: filters.deliveryType !== 'All' ? filters.deliveryType : undefined
       };
@@ -153,6 +157,8 @@ const DriveAttendance = () => {
     setActiveTab(tab);
     if (tab === 'driverList') {
       navigate('/drivers');
+    } else if (tab === 'attendanceEdit') {
+      navigate('/drivers/attendance/edit');
     } else if (tab === 'localPickup') {
       navigate('/drivers/local-pickup');
     } else if (tab === 'lineAirport') {
@@ -166,12 +172,12 @@ const DriveAttendance = () => {
       const timeForApi = (hhmm) => (hhmm && hhmm.includes(':')) ? `${hhmm}:00` : (hhmm || new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }));
       if (action === 'checkout') {
         const time = driver?.checkOut ? timeForApi(driver.checkOut) : new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        await markCheckOut(driverId, { time });
+        await markCheckOut(driverId, { date: attendanceDate, time });
       } else if (action === 'markPresent') {
         const time = driver?.checkIn ? timeForApi(driver.checkIn) : getCurrentTimeHHMM() + ':00';
-        await markPresent(driverId, { time });
+        await markPresent(driverId, { date: attendanceDate, time });
       } else if (action === 'markAbsent') {
-        await markAbsent(driverId, { type: absenceType || 'normal absent' });
+        await markAbsent(driverId, { date: attendanceDate, type: absenceType || 'normal absent' });
       }
       await fetchAttendanceData();
     } catch (error) {
@@ -188,7 +194,6 @@ const DriveAttendance = () => {
     setDrivers(prev => prev.map(d => d.id === driverId ? { ...d, [field]: getCurrentTimeHHMM() } : d));
   };
 
-  const attendanceDate = new Date().toISOString().split('T')[0];
   const timeForApi = (hhmm) => {
     if (!hhmm || !String(hhmm).includes(':')) return null;
     const parts = String(hhmm).trim().split(':');
@@ -203,7 +208,7 @@ const DriveAttendance = () => {
     const time = timeForApi(driver?.checkIn) || getCurrentTimeHHMM() + ':00';
     try {
       if (driver?.status !== 'Present') {
-        await markPresent(driverId, { time });
+        await markPresent(driverId, { date: attendanceDate, time });
       } else {
         await updateCheckInTime(driverId, { date: attendanceDate, time });
       }
@@ -219,7 +224,7 @@ const DriveAttendance = () => {
     const time = timeForApi(driver?.checkOut) || new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
     try {
       if (driver?.checkIn && !driver?.checkOut) {
-        await markCheckOut(driverId, { time });
+        await markCheckOut(driverId, { date: attendanceDate, time });
       } else if (driver?.checkOut) {
         await updateCheckOutTime(driverId, { date: attendanceDate, time });
       }
@@ -260,6 +265,15 @@ const DriveAttendance = () => {
             }`}
         >
           Attendance
+        </button>
+        <button
+          onClick={() => handleTabChange('attendanceEdit')}
+          className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${activeTab === 'attendanceEdit'
+            ? 'bg-[#0D7C66] text-white'
+            : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
+            }`}
+        >
+          Attendance Edit
         </button>
       </div>
 
@@ -319,10 +333,16 @@ const DriveAttendance = () => {
           <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#6B8782] pointer-events-none" size={16} />
         </div>
 
-        {/* Date Display (Read Only) */}
-        <div className="bg-white border border-[#D0E0DB] rounded-lg px-4 py-2.5 text-sm text-[#0D5C4D] min-w-[140px] flex items-center gap-2">
-          <Calendar size={16} className="text-[#6B8782]" />
-          <span>{new Date().toLocaleDateString('en-GB')}</span>
+        {/* Date Select (today or future) */}
+        <div className="flex items-center gap-2 min-w-[160px]">
+          <Calendar size={16} className="text-[#6B8782] flex-shrink-0" />
+          <input
+            type="date"
+            value={attendanceDate}
+            onChange={(e) => setAttendanceDate(e.target.value)}
+            min={getTodayYYYYMMDD()}
+            className="flex-1 bg-white border border-[#D0E0DB] rounded-lg px-3 py-2.5 text-sm text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+          />
         </div>
       </div>
 

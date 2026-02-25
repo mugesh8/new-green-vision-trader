@@ -65,6 +65,7 @@ import LabourEdit from './components/admin/pages/LabourEdit'
 import LabourDetails from './components/admin/pages/LabourDetails'
 import LabourDailyWorks from './components/admin/pages/LabourDailyWorks'
 import LabourAttendance from './components/admin/pages/LabourAttendance'
+import LabourAttendanceEdit from './components/admin/pages/LabourAttendanceEdit'
 import LabourDailyPayout from './components/admin/pages/LabourDailyPayout'
 import LabourExcessPayManagement from './components/admin/pages/LabourExcessPayManagement'
 import AddLabourExcessPay from './components/admin/pages/AddLabourExcessPay'
@@ -73,6 +74,7 @@ import LabourRemarksManagement from './components/admin/pages/LabourRemarksManag
 import LabourRemarkAdd from './components/admin/pages/LabourRemarkAdd'
 import LabourRemarkEdit from './components/admin/pages/LabourRemarkEdit'
 import DriveAttendance from './components/admin/pages/DriveAttendance'
+import AttendanceEdit from './components/admin/pages/AttendanceEdit'
 import ReportManagement from './components/admin/pages/ReportManagement'
 import ReportFarmer from './components/admin/pages/ReportFarmer'
 import ReportSupplier from './components/admin/pages/ReportSupplier'
@@ -731,6 +733,18 @@ const App = () => {
           }
         />
         <Route
+          path="/drivers/attendance/edit"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <RequirePermission module="Drivers" action="attendance">
+                  <AttendanceEdit />
+                </RequirePermission>
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/labour"
           element={
             <ProtectedRoute>
@@ -773,6 +787,18 @@ const App = () => {
               <Layout>
                 <RequirePermission module="Labour" action="attendance">
                   <LabourAttendance />
+                </RequirePermission>
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/labour/attendance/edit"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <RequirePermission module="Labour" action="attendance">
+                  <LabourAttendanceEdit />
                 </RequirePermission>
               </Layout>
             </ProtectedRoute>
