@@ -737,7 +737,7 @@ const App = () => {
           element={
             <ProtectedRoute>
               <Layout>
-                <RequirePermission module="Drivers" action="attendance">
+                <RequirePermission module="Drivers" action="attendance_edit">
                   <AttendanceEdit />
                 </RequirePermission>
               </Layout>
@@ -797,7 +797,7 @@ const App = () => {
           element={
             <ProtectedRoute>
               <Layout>
-                <RequirePermission module="Labour" action="attendance">
+                <RequirePermission module="Labour" action="attendance_edit">
                   <LabourAttendanceEdit />
                 </RequirePermission>
               </Layout>
@@ -1337,7 +1337,7 @@ const App = () => {
           element={
             <ProtectedRoute>
               <Layout>
-                <RequirePermission module="Reports" action="orderreports">
+                <RequirePermission module="Reports" action="flowerorderreports">
                   <ReportFlowerOrder />
                 </RequirePermission>
               </Layout>
@@ -1349,7 +1349,7 @@ const App = () => {
           element={
             <ProtectedRoute>
               <Layout>
-                <RequirePermission module="Reports" action="orderreports">
+                <RequirePermission module="Reports" action="flowerorderreports">
                   <ReportFlowerOrderView />
                 </RequirePermission>
               </Layout>

@@ -4,6 +4,7 @@ import { Check, ChevronDown, Truck, Package, MapPin, Plus, X } from 'lucide-reac
 import { getPresentDriversToday } from '../../../api/driverApi';
 import { getFlowerOrderAssignment, updateStage3Assignment } from '../../../api/flowerOrderAssignmentApi';
 import { getAllAirports } from '../../../api/airportApi';
+import InsufficientStockModal from '../../../components/common/InsufficientStockModal';
 
 const FlowerOrderAssignStage3 = () => {
   const navigate = useNavigate();
@@ -23,6 +24,8 @@ const FlowerOrderAssignStage3 = () => {
   const [isEdit, setIsEdit] = useState(!!location.state?.isEdit); // Flag to indicate edit mode
   const [stage2BoxStatus, setStage2BoxStatus] = useState({}); // { oiid: { available: number, pending: number } }
   const [noOfPkgsWarning, setNoOfPkgsWarning] = useState({}); // { rowId: 'warning message' } when No of Pkgs > Avl Box
+  const [stockModalOpen, setStockModalOpen] = useState(false);
+  const [stockModalMessage, setStockModalMessage] = useState('');
 
   // Refs for keyboard navigation in main table (No of Pkgs, Airport, Driver)
   const inputGridRefs = useRef({});
@@ -1022,7 +1025,18 @@ const FlowerOrderAssignStage3 = () => {
       navigate(`/order-assign/flower/stage4/${id}`, { state: { orderData } });
     } catch (error) {
       console.error('Error assigning airport delivery:', error);
-      alert('Failed to assign airport delivery. Please try again.');
+      const errorMessage = error?.message || error?.response?.data?.message || (typeof error === 'string' ? error : null);
+      const displayMessage = errorMessage || 'Failed to assign airport delivery. Please try again.';
+
+      const isInsufficientInventory = (displayMessage || '').toLowerCase().includes('insufficient') &&
+        ((displayMessage || '').toLowerCase().includes('inventory') || (displayMessage || '').toLowerCase().includes('tape'));
+
+      if (isInsufficientInventory) {
+        setStockModalMessage(displayMessage);
+        setStockModalOpen(true);
+      } else {
+        alert(displayMessage);
+      }
     }
   };
 
@@ -1809,6 +1823,16 @@ const FlowerOrderAssignStage3 = () => {
           {isEdit ? 'Edit Assignment' : 'Confirm Assignment'}
         </button>
       </div>
+
+      <InsufficientStockModal
+        isOpen={stockModalOpen}
+        onClose={() => setStockModalOpen(false)}
+        onNavigateToInventory={() => {
+          setStockModalOpen(false);
+          navigate('/stock');
+        }}
+        message={stockModalMessage}
+      />
     </div>
   );
 };

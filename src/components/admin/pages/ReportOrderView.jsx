@@ -4,6 +4,7 @@ import { ArrowLeft, FileText, FileSpreadsheet } from 'lucide-react';
 import { getAllOrders } from '../../../api/orderApi';
 import { getOrderAssignment } from '../../../api/orderAssignmentApi';
 import { getFlowerOrderAssignment } from '../../../api/flowerOrderAssignmentApi';
+import { getLocalOrder } from '../../../api/localOrderApi';
 import { getAllDrivers } from '../../../api/driverApi';
 import { getAllInventory } from '../../../api/inventoryApi';
 import { getAllLabourRates } from '../../../api/labourRateApi';
@@ -831,13 +832,33 @@ const ReportOrderView = () => {
                 if (foundOrder) {
                     setOrder(foundOrder);
 
-                    // Fetch assignment data (use flower API for flower orders)
+                    // Fetch assignment data - use correct API based on order type
                     try {
                         const isFlowerOrder = foundOrder.order_type === 'flower' || foundOrder.order_type === 'FLOWER ORDER';
-                        const assignmentResponse = isFlowerOrder
-                            ? await getFlowerOrderAssignment(foundOrder.oid)
-                            : await getOrderAssignment(foundOrder.oid);
-                        setAssignment(assignmentResponse.data);
+                        const isLocalOrder = foundOrder.order_type === 'local' || foundOrder.order_type === 'LOCAL GRADE ORDER' || foundOrder.order_type === 'LOCAL BOX ORDER';
+
+                        let assignmentData = null;
+                        if (isFlowerOrder) {
+                            const res = await getFlowerOrderAssignment(foundOrder.oid);
+                            assignmentData = res.data;
+                        } else if (isLocalOrder) {
+                            const res = await getLocalOrder(foundOrder.oid);
+                            // Normalize local order response to match expected assignment format
+                            const raw = res?.data || res;
+                            assignmentData = {
+                                product_assignments: raw?.product_assignments ?? raw?.productAssignments,
+                                stage1_data: raw?.product_assignments ?? raw?.productAssignments,
+                                stage1_summary_data: raw?.summary_data ?? raw?.summaryData,
+                                summary_data: raw?.summary_data ?? raw?.summaryData,
+                                stage2_data: raw?.stage2_data ?? raw?.stage2Data,
+                                stage3_data: raw?.stage3_data ?? raw?.stage3Data,
+                                stage4_data: raw?.stage4_data ?? raw?.stage4Data
+                            };
+                        } else {
+                            const res = await getOrderAssignment(foundOrder.oid);
+                            assignmentData = res.data;
+                        }
+                        setAssignment(assignmentData);
                     } catch (err) {
                         console.error('Error fetching assignment:', err);
                     }
@@ -858,7 +879,50 @@ const ReportOrderView = () => {
 
     // Grand Total used across the page (Order Information card, tables, exports)
     const getGrandTotalAmount = () => {
-        if (!assignment || !assignment.stage4_data) return 0;
+        if (!assignment) return 0;
+
+        const isLocalOrder = order?.order_type === 'local' || order?.order_type === 'LOCAL GRADE ORDER' || order?.order_type === 'LOCAL BOX ORDER';
+
+        // Local grade/box orders: calculate from product_assignments (qty * price)
+        if (isLocalOrder) {
+            try {
+                const stage1Source = assignment.product_assignments || assignment.stage1_data;
+                if (!stage1Source) return 0;
+
+                const stage1Data = typeof stage1Source === 'string' ? JSON.parse(stage1Source) : stage1Source;
+                const assignments = stage1Data.productAssignments || stage1Data.assignments || (Array.isArray(stage1Data) ? stage1Data : []);
+
+                // Build quantity map from summary if available (for rows where assignedQty is 0)
+                const summaryData = assignment.stage1_summary_data || assignment.summary_data;
+                let quantityFromSummary = {};
+                if (summaryData?.driverAssignments) {
+                    const summary = typeof summaryData === 'string' ? JSON.parse(summaryData) : summaryData;
+                    summary.driverAssignments?.forEach((dg) => {
+                        dg.assignments?.forEach((a) => {
+                            const key = `${a.product}|${a.entityName}|${a.entityType}`;
+                            if (a.quantity != null && a.quantity !== '') {
+                                quantityFromSummary[key] = parseFloat(a.quantity);
+                            }
+                        });
+                    });
+                }
+
+                let grandTotal = 0;
+                assignments.forEach((item) => {
+                    const qty = parseFloat(item.assignedQty || item.assigned_qty || item.quantity || 0) ||
+                        quantityFromSummary[`${item.product || item.productName}|${item.assignedTo || item.entityName}|${item.entityType || item.entity_type}`] || 0;
+                    const price = parseFloat(item.price || 0);
+                    grandTotal += qty * price;
+                });
+                return grandTotal;
+            } catch (e) {
+                console.error('Error calculating grand total from local order', e);
+                return 0;
+            }
+        }
+
+        // Non-local orders: use Stage 4 pricing data
+        if (!assignment.stage4_data) return 0;
 
         try {
             const stage4Data = typeof assignment.stage4_data === 'string'
@@ -906,6 +970,8 @@ const ReportOrderView = () => {
             </div>
         );
     }
+
+    const isLocalOrder = order?.order_type === 'local' || order?.order_type === 'LOCAL GRADE ORDER' || order?.order_type === 'LOCAL BOX ORDER';
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-[#E6F7F4] to-[#D0E9E4] p-6">
@@ -986,7 +1052,7 @@ const ReportOrderView = () => {
                                                     <th className="px-4 py-3 text-left whitespace-nowrap">Assigned Boxes</th>
                                                     <th className="px-4 py-3 text-left whitespace-nowrap">Labour</th>
                                                     <th className="px-4 py-3 text-left whitespace-nowrap">Driver</th>
-                                                    <th className="px-4 py-3 text-left whitespace-nowrap">Place</th>
+                                                    <th className="px-4 py-3 text-left whitespace-nowrap">Address</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -994,6 +1060,29 @@ const ReportOrderView = () => {
                                                     const stage1Source = assignment.product_assignments || assignment.stage1_data;
                                                     let stage1Data = typeof stage1Source === 'string' ? JSON.parse(stage1Source) : stage1Source;
                                                     let stage1Assignments = stage1Data.productAssignments || stage1Data.assignments || (Array.isArray(stage1Data) ? stage1Data : []);
+
+                                                    // Get Stage 4/3/2 data for Assigned Qty fallback
+                                                    let stage4ProductRows = [];
+                                                    if (assignment.stage4_data) {
+                                                        try {
+                                                            let stage4Data = typeof assignment.stage4_data === 'string' ? JSON.parse(assignment.stage4_data) : assignment.stage4_data;
+                                                            stage4ProductRows = stage4Data.reviewData?.productRows || stage4Data.productRows || [];
+                                                        } catch (e) { /* ignore */ }
+                                                    }
+                                                    let stage3Products = [];
+                                                    let stage2Assignments = [];
+                                                    if (assignment.stage3_data) {
+                                                        try {
+                                                            let stage3Data = typeof assignment.stage3_data === 'string' ? JSON.parse(assignment.stage3_data) : assignment.stage3_data;
+                                                            stage3Products = stage3Data.products || [];
+                                                        } catch (e) { /* ignore */ }
+                                                    }
+                                                    if (assignment.stage2_data) {
+                                                        try {
+                                                            let stage2Data = typeof assignment.stage2_data === 'string' ? JSON.parse(assignment.stage2_data) : assignment.stage2_data;
+                                                            stage2Assignments = stage2Data.productAssignments || stage2Data.stage2Assignments || stage2Data.assignments || [];
+                                                        } catch (e) { /* ignore */ }
+                                                    }
 
                                                     // Get Stage 1 summary data which has driver/labour assignments
                                                     let stage1SummaryData = null;
@@ -1047,6 +1136,8 @@ const ReportOrderView = () => {
                                                     return stage1Assignments.map((item, idx) => {
                                                         let labourName = '-';
                                                         let driverName = '-';
+                                                        let matchedAddress = null;
+                                                        let matchedQuantity = null;
 
                                                         // First: Try to get from Stage 1 Summary Data (Assignment Summary)
                                                         const productKey = item.product || item.productName;
@@ -1067,6 +1158,11 @@ const ReportOrderView = () => {
                                                                         // Remove driver ID (e.g., "Anbarasu Chinnaraj - DRV-260103-0002" -> "Anbarasu Chinnaraj")
                                                                         driverName = driverGroup.driver.split(' - ')[0];
                                                                     }
+                                                                    if (assignment.address) matchedAddress = assignment.address;
+                                                                    // Local grade orders store quantity in summary driverAssignments
+                                                                    if (assignment.quantity != null && assignment.quantity !== '') {
+                                                                        matchedQuantity = parseFloat(assignment.quantity);
+                                                                    }
                                                                 }
                                                             });
                                                         }
@@ -1081,16 +1177,55 @@ const ReportOrderView = () => {
                                                             }
                                                         }
 
+                                                        // Assigned Qty: try Stage 1 first (incl. quantity for local orders), then summary, then Stage 4, 3, 2
+                                                        const normalizeProductName = (s) => (s || '').replace(/^W\.\s*/i, '').trim();
+                                                        let qtyValue = parseFloat(item.assignedQty || item.assigned_qty || item.quantity || item.pickedQuantity || 0);
+                                                        if (qtyValue === 0 && matchedQuantity != null && !isNaN(matchedQuantity)) {
+                                                            qtyValue = matchedQuantity;
+                                                        }
+                                                        if (qtyValue === 0 && stage4ProductRows.length > 0) {
+                                                            const stage4Product = stage4ProductRows.find(p4 => {
+                                                                const p = normalizeProductName(p4.product_name || p4.product || p4.productName);
+                                                                return p === productKey || p === normalizeProductName(productKey);
+                                                            });
+                                                            if (stage4Product) {
+                                                                qtyValue = parseFloat(stage4Product.net_weight || stage4Product.quantity || stage4Product.assignedQty || 0);
+                                                            }
+                                                        }
+                                                        if (qtyValue === 0 && stage3Products.length > 0) {
+                                                            const stage3Product = stage3Products.find(p3 => {
+                                                                const p = normalizeProductName(p3.product || p3.productName || p3.product_name);
+                                                                return p === productKey || p === normalizeProductName(productKey);
+                                                            });
+                                                            if (stage3Product) {
+                                                                const grossWeightStr = stage3Product.grossWeight || stage3Product.gross_weight || '0';
+                                                                qtyValue = parseFloat(grossWeightStr.toString().replace(/[^0-9.]/g, '')) || 0;
+                                                            }
+                                                        }
+                                                        if (qtyValue === 0 && stage2Assignments.length > 0) {
+                                                            const stage2Product = stage2Assignments.find(p2 => {
+                                                                const p = normalizeProductName(p2.product || p2.productName || p2.product_name);
+                                                                return p === productKey || p === normalizeProductName(productKey);
+                                                            });
+                                                            if (stage2Product) {
+                                                                qtyValue = parseFloat(stage2Product.pickedQuantity || stage2Product.picked_quantity || 0);
+                                                            }
+                                                        }
+
+                                                        // Address: show full address from item or matched summary assignment
+                                                        const addressValue = (item.address || item.addressInfo || matchedAddress || '').trim();
+                                                        const displayAddress = addressValue || '-';
+
                                                         return (
                                                             <tr key={idx} className="border-b border-[#D0E0DB] hover:bg-[#F0F4F3]">
                                                                 <td className="px-4 py-3">{item.product || item.productName || '-'}</td>
                                                                 <td className="px-4 py-3">{item.entityType || item.entity_type || '-'}</td>
                                                                 <td className="px-4 py-3">{item.assignedTo || item.entityName || '-'}</td>
-                                                                <td className="px-4 py-3">{item.assignedQty || item.assigned_qty || 0}</td>
+                                                                <td className="px-4 py-3">{qtyValue > 0 ? qtyValue.toFixed(2) : qtyValue}</td>
                                                                 <td className="px-4 py-3">{item.assignedBoxes || item.assigned_boxes || 0}</td>
                                                                 <td className="px-4 py-3">{labourName}</td>
                                                                 <td className="px-4 py-3">{driverName}</td>
-                                                                <td className="px-4 py-3">{item.place || (item.entityType === 'farmer' ? 'Farmer place' : '-')}</td>
+                                                                <td className="px-4 py-3 text-sm text-gray-600 max-w-md break-words">{displayAddress}</td>
                                                             </tr>
                                                         );
                                                     });
@@ -1184,6 +1319,8 @@ const ReportOrderView = () => {
                         </div>
                     </div>
 
+                    {!isLocalOrder && (
+                    <>
                     {/* Stage 2: Packaging & Quality */}
                     <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
                         <div className="bg-[#0D8568] text-white px-6 py-4">
@@ -1825,6 +1962,8 @@ const ReportOrderView = () => {
                             )}
                         </div>
                     </div>
+                    </>
+                    )}
                 </div>
             </div>
         </div>

@@ -982,7 +982,7 @@ const ReportFlowerOrderView = () => {
                                                     <th className="px-4 py-3 text-left whitespace-nowrap">Assigned Boxes</th>
                                                     <th className="px-4 py-3 text-left whitespace-nowrap">Labour</th>
                                                     <th className="px-4 py-3 text-left whitespace-nowrap">Driver</th>
-                                                    <th className="px-4 py-3 text-left whitespace-nowrap">Place</th>
+                                                    <th className="px-4 py-3 text-left whitespace-nowrap">Address</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -990,6 +990,29 @@ const ReportFlowerOrderView = () => {
                                                     const stage1Source = assignment.product_assignments || assignment.stage1_data;
                                                     let stage1Data = typeof stage1Source === 'string' ? JSON.parse(stage1Source) : stage1Source;
                                                     let stage1Assignments = stage1Data.productAssignments || stage1Data.assignments || (Array.isArray(stage1Data) ? stage1Data : []);
+
+                                                    // Get Stage 4/3/2 data for Assigned Qty fallback
+                                                    let stage4ProductRows = [];
+                                                    if (assignment.stage4_data) {
+                                                        try {
+                                                            let stage4Data = typeof assignment.stage4_data === 'string' ? JSON.parse(assignment.stage4_data) : assignment.stage4_data;
+                                                            stage4ProductRows = stage4Data.reviewData?.productRows || stage4Data.productRows || [];
+                                                        } catch (e) { /* ignore */ }
+                                                    }
+                                                    let stage3Products = [];
+                                                    let stage2Assignments = [];
+                                                    if (assignment.stage3_data) {
+                                                        try {
+                                                            let stage3Data = typeof assignment.stage3_data === 'string' ? JSON.parse(assignment.stage3_data) : assignment.stage3_data;
+                                                            stage3Products = stage3Data.products || [];
+                                                        } catch (e) { /* ignore */ }
+                                                    }
+                                                    if (assignment.stage2_data) {
+                                                        try {
+                                                            let stage2Data = typeof assignment.stage2_data === 'string' ? JSON.parse(assignment.stage2_data) : assignment.stage2_data;
+                                                            stage2Assignments = stage2Data.productAssignments || stage2Data.stage2Assignments || stage2Data.assignments || [];
+                                                        } catch (e) { /* ignore */ }
+                                                    }
 
                                                     // Get Stage 1 summary data which has driver/labour assignments
                                                     let stage1SummaryData = null;
@@ -1043,6 +1066,7 @@ const ReportFlowerOrderView = () => {
                                                     return stage1Assignments.map((item, idx) => {
                                                         let labourName = '-';
                                                         let driverName = '-';
+                                                        let matchedAddress = null;
 
                                                         // First: Try to get from Stage 1 Summary Data (Assignment Summary)
                                                         const productKey = item.product || item.productName;
@@ -1060,9 +1084,9 @@ const ReportFlowerOrderView = () => {
                                                                             : assignment.labour;
                                                                     }
                                                                     if (driverGroup.driver) {
-                                                                        // Remove driver ID (e.g., "Anbarasu Chinnaraj - DRV-260103-0002" -> "Anbarasu Chinnaraj")
                                                                         driverName = driverGroup.driver.split(' - ')[0];
                                                                     }
+                                                                    if (assignment.address) matchedAddress = assignment.address;
                                                                 }
                                                             });
                                                         }
@@ -1071,22 +1095,57 @@ const ReportFlowerOrderView = () => {
                                                         if ((labourName === '-' || driverName === '-') && stage3DriverMap[productKey]) {
                                                             if (labourName === '-') labourName = stage3DriverMap[productKey].labour;
                                                             if (driverName === '-') {
-                                                                // Remove driver ID from Stage 3 data too
                                                                 const stage3Driver = stage3DriverMap[productKey].driver;
                                                                 driverName = stage3Driver.includes(' - ') ? stage3Driver.split(' - ')[0] : stage3Driver;
                                                             }
                                                         }
+
+                                                        // Assigned Qty: try Stage 1 first, then fallback to Stage 4, 3, 2
+                                                        const normalizeProductName = (s) => (s || '').replace(/^W\.\s*/i, '').trim();
+                                                        let qtyValue = parseFloat(item.assignedQty || item.assigned_qty || item.pickedQuantity || 0);
+                                                        if (qtyValue === 0 && stage4ProductRows.length > 0) {
+                                                            const stage4Product = stage4ProductRows.find(p4 => {
+                                                                const p = normalizeProductName(p4.product_name || p4.product || p4.productName);
+                                                                return p === productKey || p === normalizeProductName(productKey);
+                                                            });
+                                                            if (stage4Product) {
+                                                                qtyValue = parseFloat(stage4Product.net_weight || stage4Product.quantity || stage4Product.assignedQty || 0);
+                                                            }
+                                                        }
+                                                        if (qtyValue === 0 && stage3Products.length > 0) {
+                                                            const stage3Product = stage3Products.find(p3 => {
+                                                                const p = normalizeProductName(p3.product || p3.productName || p3.product_name);
+                                                                return p === productKey || p === normalizeProductName(productKey);
+                                                            });
+                                                            if (stage3Product) {
+                                                                const grossWeightStr = stage3Product.grossWeight || stage3Product.gross_weight || '0';
+                                                                qtyValue = parseFloat(grossWeightStr.toString().replace(/[^0-9.]/g, '')) || 0;
+                                                            }
+                                                        }
+                                                        if (qtyValue === 0 && stage2Assignments.length > 0) {
+                                                            const stage2Product = stage2Assignments.find(p2 => {
+                                                                const p = normalizeProductName(p2.product || p2.productName || p2.product_name);
+                                                                return p === productKey || p === normalizeProductName(productKey);
+                                                            });
+                                                            if (stage2Product) {
+                                                                qtyValue = parseFloat(stage2Product.pickedQuantity || stage2Product.picked_quantity || 0);
+                                                            }
+                                                        }
+
+                                                        // Address: show full address from item or matched summary assignment
+                                                        const addressValue = (item.address || item.addressInfo || matchedAddress || '').trim();
+                                                        const displayAddress = addressValue || '-';
 
                                                         return (
                                                             <tr key={idx} className="border-b border-[#D0E0DB] hover:bg-[#F0F4F3]">
                                                                 <td className="px-4 py-3">{item.product || item.productName || '-'}</td>
                                                                 <td className="px-4 py-3">{item.entityType || item.entity_type || '-'}</td>
                                                                 <td className="px-4 py-3">{item.assignedTo || item.entityName || '-'}</td>
-                                                                <td className="px-4 py-3">{item.assignedQty || item.assigned_qty || 0}</td>
+                                                                <td className="px-4 py-3">{qtyValue > 0 ? qtyValue.toFixed(2) : qtyValue}</td>
                                                                 <td className="px-4 py-3">{item.assignedBoxes || item.assigned_boxes || 0}</td>
                                                                 <td className="px-4 py-3">{labourName}</td>
                                                                 <td className="px-4 py-3">{driverName}</td>
-                                                                <td className="px-4 py-3">{item.place || (item.entityType === 'farmer' ? 'Farmer place' : '-')}</td>
+                                                                <td className="px-4 py-3 text-sm text-gray-600 max-w-md break-words">{displayAddress}</td>
                                                             </tr>
                                                         );
                                                     });

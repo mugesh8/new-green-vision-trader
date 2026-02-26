@@ -33,7 +33,11 @@ const RemarksManagement = () => {
     try {
       setLoading(true);
       const response = await getAllRemarks();
-      setRemarksData(response.data || []);
+      // Handle various API response structures: { data: [...] }, { remarks: [...] }, or direct array
+      const remarks = Array.isArray(response)
+        ? response
+        : (response?.data ?? response?.remarks ?? []);
+      setRemarksData(Array.isArray(remarks) ? remarks : []);
     } catch (error) {
       toast.error(error.message || 'Failed to fetch remarks');
     } finally {
