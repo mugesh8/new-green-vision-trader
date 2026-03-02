@@ -14,6 +14,8 @@ const ReportInvoiceCumPackingList = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -30,8 +32,15 @@ const ReportInvoiceCumPackingList = () => {
           return isBox || isFlower;
         });
 
-        setOrders(invoiceOrders);
-        setFilteredOrders(invoiceOrders);
+        // Sort by recently created first (newest at top)
+        const sorted = invoiceOrders.sort((a, b) => {
+          const dateA = new Date(a.createdAt || a.date || 0).getTime();
+          const dateB = new Date(b.createdAt || b.date || 0).getTime();
+          return dateB - dateA;
+        });
+
+        setOrders(sorted);
+        setFilteredOrders(sorted);
 
         // Fetch stage4 data and calculate amounts for each order
         const amountsMap = {};
@@ -135,11 +144,12 @@ const ReportInvoiceCumPackingList = () => {
   useEffect(() => {
     let filtered = [...orders];
 
-    // Filter by search term
+    // Filter by search term (Order ID or Client)
     if (searchTerm) {
+      const term = searchTerm.toLowerCase();
       filtered = filtered.filter(order =>
-        order.oid?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.client_name?.toLowerCase().includes(searchTerm.toLowerCase())
+        (order.order_auto_id || order.oid || '').toLowerCase().includes(term) ||
+        (order.client_name || order.customer_name || '').toLowerCase().includes(term)
       );
     }
 
@@ -156,13 +166,26 @@ const ReportInvoiceCumPackingList = () => {
       filtered = filtered.filter(order => new Date(order.createdAt || order.date) <= end);
     }
 
+    // Sort by recently created first (newest at top)
+    filtered.sort((a, b) => {
+      const dateA = new Date(a.createdAt || a.date || 0).getTime();
+      const dateB = new Date(b.createdAt || b.date || 0).getTime();
+      return dateB - dateA;
+    });
+
     setFilteredOrders(filtered);
+    setCurrentPage(1); // Reset to first page when filters change
   }, [orders, searchTerm, startDate, endDate]);
 
   const handleExport = () => {
     // Export functionality can be implemented here
     alert('Export feature coming soon!');
   };
+
+  // Pagination
+  const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const currentPageOrders = filteredOrders.slice(startIndex, startIndex + itemsPerPage);
 
   const stats = [
     { 
@@ -305,7 +328,7 @@ const ReportInvoiceCumPackingList = () => {
                   <td colSpan="11" className="px-6 py-8 text-center text-gray-500">No orders found</td>
                 </tr>
               ) : (
-                filteredOrders.map((order, index) => {
+                currentPageOrders.map((order, index) => {
                   // Helper function to parse num_boxes (handles both string "4boxes" and number)
                   const parseNumBoxes = (numBoxesStr) => {
                     if (!numBoxesStr) return 0;
@@ -327,8 +350,8 @@ const ReportInvoiceCumPackingList = () => {
                       key={index} 
                       className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'}`}
                     >
-                      <td className="px-6 py-4 text-sm text-[#0D5C4D]">INV-{order.oid || 'N/A'}</td>
-                      <td className="px-6 py-4 text-sm font-semibold text-[#0D5C4D]">{order.oid || 'N/A'}</td>
+                      <td className="px-6 py-4 text-sm text-[#0D5C4D]">INV-{order.order_auto_id || order.oid || 'N/A'}</td>
+                      <td className="px-6 py-4 text-sm font-semibold text-[#0D5C4D]">{order.order_auto_id || order.oid || 'N/A'}</td>
                       <td className="px-6 py-4">
                         <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
                           order.order_type === 'flower' || order.order_type === 'FLOWER ORDER'
@@ -338,7 +361,7 @@ const ReportInvoiceCumPackingList = () => {
                           {order.order_type === 'flower' || order.order_type === 'FLOWER ORDER' ? 'FLOWER ORDER' : 'BOX ORDER'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 font-semibold text-[#0D5C4D]">{order.client_name || 'N/A'}</td>
+                      <td className="px-6 py-4 font-semibold text-[#0D5C4D]">{order.client_name || order.customer_name || 'N/A'}</td>
                       <td className="px-6 py-4 text-sm text-[#0D5C4D]">
                         {order.createdAt 
                           ? new Date(order.createdAt).toLocaleDateString() 
@@ -387,12 +410,26 @@ const ReportInvoiceCumPackingList = () => {
         {filteredOrders.length > 0 && (
           <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
             <div className="text-sm text-[#6B8782]">
-              Showing {filteredOrders.length} of {orders.length} invoices
+              Showing {startIndex + 1}–{Math.min(startIndex + itemsPerPage, filteredOrders.length)} of {filteredOrders.length} invoices
             </div>
             <div className="flex items-center gap-2">
-              <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">&lt;</button>
-              <button className="px-4 py-2 rounded-lg font-medium bg-[#0D8568] text-white">1</button>
-              <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">&gt;</button>
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <span className="px-3 py-2 text-sm text-[#0D5C4D]">
+                Page {currentPage} of {totalPages || 1}
+              </span>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
             </div>
           </div>
         )}

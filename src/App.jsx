@@ -90,6 +90,8 @@ import ReportFlowerOrderView from './components/admin/pages/ReportFlowerOrderVie
 import ReportDriver from './components/admin/pages/ReportDriver'
 import ReportDriverView from './components/admin/pages/ReportDriverView'
 import ReportOrderView from './components/admin/pages/ReportOrderView'
+import ReportAirport from './components/admin/pages/ReportAirport'
+import ReportAirportView from './components/admin/pages/ReportAirportView'
 import ReportFarmerView from './components/admin/pages/ReportFarmerView'
 import ReportFarmerOrderView from './components/admin/pages/ReportFarmerOrderView'
 import ReportSupplierView from './components/admin/pages/ReportSupplierView'
@@ -1351,6 +1353,30 @@ const App = () => {
               <Layout>
                 <RequirePermission module="Reports" action="flowerorderreports">
                   <ReportFlowerOrderView />
+                </RequirePermission>
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/reports/airport"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <RequirePermission module="Reports">
+                  <ReportAirport />
+                </RequirePermission>
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/reports/airport/:orderId"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <RequirePermission module="Reports">
+                  <ReportAirportView />
                 </RequirePermission>
               </Layout>
             </ProtectedRoute>

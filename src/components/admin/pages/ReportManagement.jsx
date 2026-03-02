@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, ChevronDown, FileText, Users, Wallet, Briefcase, FileBarChart } from 'lucide-react';
+import { Calendar, ChevronDown, FileText, Users, Wallet, Briefcase, FileBarChart, Plane } from 'lucide-react';
 import { getAllOrders } from '../../../api/orderApi';
 import { getAllFarmers } from '../../../api/farmerApi';
 import { getAllSuppliers } from '../../../api/supplierApi';
@@ -232,6 +232,17 @@ const ReportManagement = () => {
       bgColor: 'bg-pink-50',
       iconColor: 'text-pink-500',
       path: '/reports/flower-order',
+      type: 'operations'
+    },
+    {
+      title: 'Airport Report',
+      description: 'Stage 3 delivery routes for box and flower orders',
+      metric: 'Box & Flower Orders',
+      link: 'View Report →',
+      icon: Plane,
+      bgColor: 'bg-sky-50',
+      iconColor: 'text-sky-500',
+      path: '/reports/airport',
       type: 'operations'
     },
     {
