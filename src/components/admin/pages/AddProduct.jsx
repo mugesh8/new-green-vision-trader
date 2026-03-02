@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Search, Plus, X } from 'lucide-react';
 import { createCategory, getAllCategories, updateCategory, deleteCategory } from '../../../api/categoryApi';
 import { createProduct, getAllProducts, updateProduct, deleteProduct } from '../../../api/productApi';
@@ -8,9 +9,11 @@ import { getPreferencesByCustomer, createPreference, updatePreference, deletePre
 import { BASE_URL } from '../../../config/config';
 
 const AddProduct = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const pageFromUrl = parseInt(searchParams.get('page') || '1', 10);
   const [activeTab, setActiveTab] = useState('product');
   const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(Math.max(1, isNaN(pageFromUrl) ? 1 : pageFromUrl));
   const [totalPages, setTotalPages] = useState(1);
   const [totalProducts, setTotalProducts] = useState(0);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -271,6 +274,31 @@ const AddProduct = () => {
       console.error('Failed to fetch products:', error);
     }
   };
+
+  // Sync currentPage to URL so it persists on refresh
+  useEffect(() => {
+    if (activeTab === 'product' && currentPage > 1) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.set('page', String(currentPage));
+        return next;
+      }, { replace: true });
+    } else if (activeTab === 'product' && currentPage === 1) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('page');
+        return next;
+      }, { replace: true });
+    }
+  }, [activeTab, currentPage]);
+
+  // Sync from URL when user navigates back/forward
+  useEffect(() => {
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    if (!isNaN(page) && page >= 1 && page !== currentPage) {
+      setCurrentPage(page);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     // Always fetch all categories for dropdowns

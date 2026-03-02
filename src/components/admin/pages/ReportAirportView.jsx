@@ -295,10 +295,10 @@ const ReportAirportView = () => {
       if (countNetBag > 0) packagingRows.push({ label: 'NET BAG', count: countNetBag, rate: priceNetBag, total: costNetBag });
       uniqueLabours.forEach(name => {
         const w = stage2LabourWageMap[name];
-        packagingRows.push({ label: `LABOUR (${name})`, count: 1, rate: (typeof w === 'number' && !isNaN(w)) ? w : labourRate, total: (typeof w === 'number' && !isNaN(w)) ? w : labourRate });
+        packagingRows.push({ label: `LABOUR (${name})`, count: 1, rate: (typeof w === 'number' && !isNaN(w)) ? w : labourRate, total: (typeof w === 'number' && !isNaN(w)) ? w : labourRate, hideCost: true });
       });
-      packagingRows.push({ label: `${driverNameWithNum} PICKUP`, count: null, rate: null, total: driverWage });
-      packagingRows.push({ label: 'TAPE & PAPER', count: null, rate: null, total: tapeCost });
+      packagingRows.push({ label: `${driverNameWithNum} PICKUP`, count: null, rate: null, total: driverWage, hideCost: true });
+      packagingRows.push({ label: 'TAPE & PAPER', count: data.tapeQuantity ?? 0, rate: null, total: null });
       if (fuelExpense > 0) packagingRows.push({ label: 'FUEL EXPENSE', count: null, rate: null, total: fuelExpense });
 
       return {
@@ -370,34 +370,29 @@ const ReportAirportView = () => {
       doc.setFontSize(8);
       doc.text(cleanText(card.driverNameWithNum), 190, finalY + 12, { align: 'right' });
 
-      // Product table - same as Order Report
-      const pBody = card.products.map(p => [p.ct || p.sNo, p.box, cleanText(p.product), p.grossWeight.toFixed(0), p.rate, p.amount.toFixed(0)]);
+      // Product table - same as Order Report (without Rate/Amount)
+      const pBody = card.products.map(p => [p.ct || p.sNo, p.box, cleanText(p.product), p.grossWeight.toFixed(0)]);
 
       doc.autoTable({
         startY: finalY + 16,
-        head: [['S.N', 'Box', 'Product', 'Kgs', 'Rate', 'Amount']],
-        body: pBody.length ? pBody : [['-', '-', '-', '-', '-', '-']],
+        head: [['S.N', 'Box', 'Product', 'Kgs']],
+        body: pBody.length ? pBody : [['-', '-', '-', '-']],
         theme: 'striped',
         headStyles: { fillColor: [16, 185, 129], textColor: 255, fontStyle: 'bold', fontSize: 9 },
         styles: { fontSize: 8, cellPadding: 2 },
-        columnStyles: { 0: { cellWidth: 10 }, 1: { cellWidth: 10 }, 3: { cellWidth: 15 }, 4: { cellWidth: 15 }, 5: { cellWidth: 20, halign: 'right' } },
+        columnStyles: { 0: { cellWidth: 10 }, 1: { cellWidth: 10 }, 3: { cellWidth: 20 } },
         alternateRowStyles: { fillColor: [240, 253, 244] },
         margin: { left: 14, right: 14 }
       });
 
-      // Expenses table - same structure as Order Report
+      // Expenses table - Count only (no Total column); TAPE & PAPER shows count
       const pkgBody = [];
-      pkgBody.push([{ content: 'Expenses', styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } }, { content: 'Count', styles: { halign: 'center', fillColor: [229, 231, 235] } }, { content: 'Rate', styles: { halign: 'center', fillColor: [229, 231, 235] } }, { content: 'Total', styles: { halign: 'right', fillColor: [229, 231, 235] } }]);
+      pkgBody.push([{ content: 'Expenses', styles: { fontStyle: 'bold', fillColor: [229, 231, 235] } }, { content: 'Count', styles: { halign: 'center', fillColor: [229, 231, 235] } }]);
       card.packagingRows.forEach(r => {
-        if (r.count != null && r.rate != null) {
-          pkgBody.push([r.label, r.count, r.rate, r.total]);
-        } else {
-          pkgBody.push([{ content: r.label, colSpan: 3 }, r.total]);
-        }
+        const displayCount = r.count ?? '';
+        pkgBody.push([r.label, displayCount]);
       });
-      pkgBody.push([{ content: 'TOTAL EXPENSES:', colSpan: 3, styles: { halign: 'right', fontStyle: 'bold', fillColor: [209, 250, 229] } }, { content: card.totalExpenses.toFixed(0), styles: { fontStyle: 'bold', fillColor: [209, 250, 229] } }]);
-      pkgBody.push([{ content: 'VEG TOTAL:', colSpan: 3, styles: { halign: 'right', fontStyle: 'bold', fillColor: [209, 250, 229] } }, { content: card.vegExpenses.toFixed(0), styles: { fontStyle: 'bold', fillColor: [209, 250, 229] } }]);
-      pkgBody.push([{ content: `GRAND TOTAL PER KG (NET ${card.netWeight.toFixed(0)}kg):`, colSpan: 3, styles: { halign: 'right', fontStyle: 'bold', fillColor: [167, 243, 208] } }, { content: card.totalExpPerKg, styles: { fontStyle: 'bold', fillColor: [167, 243, 208] } }]);
+      pkgBody.push([{ content: `GRAND TOTAL PER KG (NET ${card.netWeight.toFixed(0)}kg):`, colSpan: 1, styles: { halign: 'right', fontStyle: 'bold', fillColor: [167, 243, 208] } }, { content: card.totalExpPerKg, styles: { fontStyle: 'bold', fillColor: [167, 243, 208] } }]);
 
       doc.autoTable({
         startY: doc.lastAutoTable.finalY,
@@ -405,7 +400,7 @@ const ReportAirportView = () => {
         body: pkgBody,
         theme: 'grid',
         styles: { fontSize: 8, cellPadding: 2 },
-        columnStyles: { 0: { cellWidth: 73 }, 1: { cellWidth: 18, halign: 'center' }, 2: { cellWidth: 18, halign: 'center' }, 3: { cellWidth: 73, halign: 'right' } },
+        columnStyles: { 0: { cellWidth: 120 }, 1: { cellWidth: 72, halign: 'center' } },
         margin: { left: 14, right: 14 }
       });
       finalY = doc.lastAutoTable.finalY + 12;
@@ -435,7 +430,7 @@ const ReportAirportView = () => {
       return { v: val, t: typeof val === 'number' ? 'n' : 's', s };
     };
 
-    const COLS_PER_CARD = 6;
+    const COLS_PER_CARD = 4;
     const GAP_COLS = 1;
     const CARD_START = (idx) => idx * (COLS_PER_CARD + GAP_COLS);
 
@@ -482,7 +477,7 @@ const ReportAirportView = () => {
     allRows.push(headerRow);
     rowIdx++;
 
-    // Product table headers
+    // Product table headers (without Rate/Amount)
     const prodHeaderRow = [];
     stage3Cards.forEach((_, idx) => {
       const start = CARD_START(idx);
@@ -490,20 +485,18 @@ const ReportAirportView = () => {
       prodHeaderRow[start + 1] = cell('Box', 'tableHeader', true);
       prodHeaderRow[start + 2] = cell('Product', 'tableHeader', true);
       prodHeaderRow[start + 3] = cell('Kgs', 'tableHeader', true);
-      prodHeaderRow[start + 4] = cell('Rate', 'tableHeader', true);
-      prodHeaderRow[start + 5] = cell('Amount', 'tableHeader', true);
     });
     allRows.push(prodHeaderRow);
     rowIdx++;
 
-    // Product rows
+    // Product rows (without Rate/Amount)
     for (let r = 0; r < maxProducts; r++) {
       const prodRow = [];
       stage3Cards.forEach((card, idx) => {
         const start = CARD_START(idx);
         const p = card.products[r];
         for (let k = 0; k < COLS_PER_CARD; k++) {
-          const val = p ? [p.ct || p.sNo, p.box, p.product, p.grossWeight, p.rate, p.amount][k] : '';
+          const val = p ? [p.ct || p.sNo, p.box, p.product, p.grossWeight][k] : '';
           prodRow[start + k] = cell(val, 'normal', true);
         }
       });
@@ -513,21 +506,19 @@ const ReportAirportView = () => {
 
     allRows.push([]); rowIdx++;
 
-    // Packaging Costs header
+    // Packaging Costs header (Count only, no Total)
     const packHeaderRow = [];
     stage3Cards.forEach((_, idx) => {
       const start = CARD_START(idx);
       packHeaderRow[start] = cell('Packaging Costs:', 'tableHeader', true);
       packHeaderRow[start + 1] = cell('Count', 'tableHeader', true);
-      packHeaderRow[start + 2] = cell('Rate', 'tableHeader', true);
-      packHeaderRow[start + 3] = cell('Total', 'tableHeader', true);
-      packHeaderRow[start + 4] = cell('', 'normal', true);
-      packHeaderRow[start + 5] = cell('', 'normal', true);
+      packHeaderRow[start + 2] = cell('', 'normal', true);
+      packHeaderRow[start + 3] = cell('', 'normal', true);
     });
     allRows.push(packHeaderRow);
     rowIdx++;
 
-    // Packaging rows
+    // Packaging rows (Count only, no Total)
     for (let r = 0; r < maxPackaging; r++) {
       const packRow = [];
       stage3Cards.forEach((card, idx) => {
@@ -535,40 +526,22 @@ const ReportAirportView = () => {
         const row = card.packagingRows[r];
         packRow[start] = cell(row?.label ?? '', 'normal', true);
         packRow[start + 1] = cell(row?.count ?? '', 'normal', true);
-        packRow[start + 2] = cell(row?.rate ?? '', 'normal', true);
-        packRow[start + 3] = cell(row?.total ?? '', 'normal', true);
-        packRow[start + 4] = cell('', 'normal', true);
-        packRow[start + 5] = cell('', 'normal', true);
+        packRow[start + 2] = cell('', 'normal', true);
+        packRow[start + 3] = cell('', 'normal', true);
       });
       allRows.push(packRow);
       rowIdx++;
     }
 
-    // Totals - all cards on same rows (side by side), gray bg for total rows
-    const r1 = [], r2 = [], r3 = [];
+    // Grand Total row only (TOTAL EXPENSES and VEG TOTAL removed)
+    const r3 = [];
     stage3Cards.forEach((card, idx) => {
       const start = CARD_START(idx);
-      r1[start] = cell('TOTAL EXPENSES:', 'bold', true);
-      r1[start + 1] = cell('', 'bold', true);
-      r1[start + 2] = cell('', 'bold', true);
-      r1[start + 3] = cell(card.totalExpenses, 'bold', true);
-      r1[start + 4] = cell('', 'bold', true);
-      r1[start + 5] = cell('', 'bold', true);
-      r2[start] = cell('VEG TOTAL:', 'bold', true);
-      r2[start + 1] = cell('', 'bold', true);
-      r2[start + 2] = cell('', 'bold', true);
-      r2[start + 3] = cell(card.vegExpenses, 'bold', true);
-      r2[start + 4] = cell('', 'bold', true);
-      r2[start + 5] = cell('', 'bold', true);
       r3[start] = cell(`GRAND TOTAL PER KG (NET ${card.netWeight.toFixed(0)}kg):`, 'grandTotal', true);
       r3[start + 1] = cell('', 'grandTotal', true);
       r3[start + 2] = cell('', 'grandTotal', true);
       r3[start + 3] = cell(card.totalExpPerKg, 'grandTotal', true);
-      r3[start + 4] = cell('', 'grandTotal', true);
-      r3[start + 5] = cell('', 'grandTotal', true);
     });
-    allRows.push(r1); rowIdx++;
-    allRows.push(r2); rowIdx++;
     allRows.push(r3); rowIdx++;
 
     const ws = XLSX.utils.aoa_to_sheet(allRows);
@@ -659,8 +632,6 @@ const ReportAirportView = () => {
                             <th className="border-r border-gray-300 p-1 w-8">Box</th>
                             <th className="border-r border-gray-300 p-1 text-left pl-2">Product</th>
                             <th className="border-r border-gray-300 p-1 w-12">Kgs</th>
-                            <th className="border-r border-gray-300 p-1 w-12">Rate</th>
-                            <th className="border-r border-gray-300 p-1 w-16 text-right pr-2">Amount</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -670,8 +641,6 @@ const ReportAirportView = () => {
                               <td className="border-r border-gray-200 p-1 text-center">{p.box}</td>
                               <td className="border-r border-gray-200 p-1 pl-2 font-medium">{p.product}</td>
                               <td className="border-r border-gray-200 p-1 text-center">{p.grossWeight.toFixed(0)}</td>
-                              <td className="border-r border-gray-200 p-1 text-center">{p.rate}</td>
-                              <td className="border-r border-gray-200 p-1 text-right pr-2">{p.amount.toFixed(0)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -680,17 +649,13 @@ const ReportAirportView = () => {
                         <table className="w-full text-[10px]">
                           <tbody>
                             <tr className="border-b border-gray-200">
-                              <td className="p-1 font-bold w-[40%]">Packaging Costs:</td>
-                              <td className="p-1 text-center w-[10%]">Count</td>
-                              <td className="p-1 text-center w-[10%]">Rate</td>
-                              <td className="p-1 text-right w-[40%] pr-2">Total</td>
+                              <td className="p-1 font-bold w-[70%]">Packaging Costs:</td>
+                              <td className="p-1 text-center w-[30%]">Count</td>
                             </tr>
                             {card.packagingRows.map((row, ri) => (
                               <tr key={ri} className="border-b border-gray-200">
                                 <td className="p-1 pl-4">{row.label}</td>
                                 <td className="p-1 text-center">{row.count ?? ''}</td>
-                                <td className="p-1 text-center">{row.rate ?? ''}</td>
-                                <td className="p-1 text-right pr-2">{row.total}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -701,16 +666,8 @@ const ReportAirportView = () => {
                   <div className="border-t border-gray-300 p-2">
                     <table className="w-full text-[10px]">
                       <tbody>
-                        <tr className="font-bold bg-gray-100">
-                          <td className="p-1 text-right" colSpan="3">TOTAL EXPENSES:</td>
-                          <td className="p-1 text-right pr-2">{card.totalExpenses.toFixed(0)}</td>
-                        </tr>
-                        <tr className="font-bold bg-gray-100">
-                          <td className="p-1 text-right" colSpan="3">VEG TOTAL:</td>
-                          <td className="p-1 text-right pr-2">{card.vegExpenses.toFixed(0)}</td>
-                        </tr>
                         <tr className="font-black border-t-2 border-gray-400">
-                          <td className="p-1 text-right" colSpan="3">GRAND TOTAL PER KG (NET {card.netWeight.toFixed(0)}kg):</td>
+                          <td className="p-1 text-right">GRAND TOTAL PER KG (NET {card.netWeight.toFixed(0)}kg):</td>
                           <td className="p-1 text-right pr-2 text-lg">{card.totalExpPerKg}</td>
                         </tr>
                       </tbody>
