@@ -9,8 +9,9 @@ import { getAllSuppliers } from '../../../api/supplierApi';
 import { getAllThirdParties } from '../../../api/thirdPartyApi';
 import { getAllLabours } from '../../../api/labourApi';
 import { getPresentLaboursToday } from '../../../api/labourAttendanceApi';
-import { getAllDrivers } from '../../../api/driverApi';
+import { getPresentDriversToday } from '../../../api/driverApi';
 import { getAllProducts } from '../../../api/productApi';
+import { getAllProductCounts } from '../../../api/productCountApi';
 import { getAvailableStock } from '../../../api/orderAssignmentApi';
 import { getVegetableAvailabilityByFarmer } from '../../../api/vegetableAvailabilityApi';
 import { getLocalOrder, saveLocalOrder } from '../../../api/localOrderApi';
@@ -90,6 +91,16 @@ const LocalOrderAssign = () => {
     }
   };
 
+  // Update product count for a main row (used when Product Count toggle is ON)
+  const handleProductCountChange = (rowIndex, value) => {
+    setProductRows(prev => {
+      const updated = [...prev];
+      if (!updated[rowIndex]) return prev;
+      updated[rowIndex] = { ...updated[rowIndex], productCount: value };
+      return updated;
+    });
+  };
+
   // Fetch available stock and farmer availability on component mount
   useEffect(() => {
     const fetchData = async () => {
@@ -135,14 +146,9 @@ const LocalOrderAssign = () => {
     fetchFarmerAvailability();
   }, [assignmentOptions.farmers]);
 
-  // Update isBoxBasedOrder when orderDetails changes
+  // Local Order Assign is always net-weight based (no box-based UI)
   useEffect(() => {
-    if (orderDetails?.items?.length > 0) {
-      // Determine if order was created with boxes or net weight
-      const firstItem = orderDetails.items[0];
-      const hasBoxes = firstItem.num_boxes && parseInt(firstItem.num_boxes) > 0;
-      setIsBoxBasedOrder(hasBoxes);
-    }
+    setIsBoxBasedOrder(false);
   }, [orderDetails]);
 
   // Close labour dropdown when clicking outside
@@ -264,23 +270,30 @@ const LocalOrderAssign = () => {
           }
         }
 
-        const [farmersRes, suppliersRes, thirdPartiesRes, laboursRes, driversRes, productsRes] = await Promise.all([
+        const [farmersRes, suppliersRes, thirdPartiesRes, laboursRes, driversRes, productsRes, productCountsRes] = await Promise.all([
           getAllFarmers(),
           getAllSuppliers(),
           getAllThirdParties(),
           getPresentLaboursToday(),
-          getAllDrivers(),
-          getAllProducts(1, 1000)
+          getPresentDriversToday(),
+          getAllProducts(1, 1000),
+          getAllProductCounts(1, 1000, '').catch(() => ({ data: [] }))
         ]);
 
         const allProductsList = productsRes.success ? productsRes.data || [] : [];
+        const productCountRecords = productCountsRes?.data || [];
+        const productCountEnabledIds = new Set(
+          productCountRecords
+            .filter(r => (r.product_status || '').toLowerCase() === 'active')
+            .map(r => String(r.pid))
+        );
 
         // Store data in local variables for immediate use
         const farmers = farmersRes.data || [];
         const suppliers = suppliersRes.data || [];
         const thirdParties = thirdPartiesRes.data || [];
 
-        // Extract labours using the same logic as Stage 2
+        // Extract labours using the same logic as Stage 1 (present labours only)
         // console.log('Full labour response (LocalOrderAssign):', laboursRes);
 
         let labours = [];
@@ -305,7 +318,8 @@ const LocalOrderAssign = () => {
 
         // console.log('Present labours (LocalOrderAssign):', labours);
 
-        const drivers = driversRes.data || [];
+        // Extract present drivers using the same logic as Stage 1
+        const drivers = driversRes.data?.map(record => record.driver).filter(d => d) || [];
 
         setAssignmentOptions({
           farmers,
@@ -412,7 +426,7 @@ const LocalOrderAssign = () => {
         const deliveryRoutesData = localOrderData?.deliveryRoutes || localOrderData?.delivery_routes;
         const summaryDataFromLocal = localOrderData?.summaryData || localOrderData?.summary_data;
 
-        if (localOrderData && productAssignments) {
+          if (localOrderData && productAssignments) {
           // console.log('Loading from local order data');
 
           // Get order items
@@ -436,6 +450,8 @@ const LocalOrderAssign = () => {
                 currentPrice = parseFloat(matchedProduct.current_price);
               }
 
+              const hasProductCount = matchedProduct && productCountEnabledIds.has(String(matchedProduct.pid));
+
               return {
                 id: item.oiid,
                 product: (item.product || item.product_name || '')?.replace(/^\d+\s*-\s*/, ''),
@@ -450,6 +466,10 @@ const LocalOrderAssign = () => {
                 assignedBoxes: 0,
                 price: 0,
                 canEdit: true,
+                hasProductCount,
+                productCount: '',
+                multiple_box_id: item.multiple_box_id || null,
+                multiple_box_name: item.multiple_box_name || null
               };
             });
 
@@ -481,6 +501,7 @@ const LocalOrderAssign = () => {
                 row.assignedBoxes = parseFloat(firstAssignment.assignedBoxes) || 0; // Add assignedBoxes field
                 row.assignedTo = firstAssignment.assignedTo || '';
                 row.addressInfo = firstAssignment.address || '';
+                row.productCount = firstAssignment.productCount || firstAssignment.product_count || row.productCount || '';
 
                 // console.log(`  Main assignment:`, {
                 //   entityType: row.entityType,
@@ -701,6 +722,8 @@ const LocalOrderAssign = () => {
                   currentPrice = parseFloat(matchedProduct.current_price);
                 }
 
+                const hasProductCount = matchedProduct && productCountEnabledIds.has(String(matchedProduct.pid));
+
                 return {
                   id: item.oiid,
                   product: (item.product || item.product_name || '')?.replace(/^\d+\s*-\s*/, ''),
@@ -715,6 +738,10 @@ const LocalOrderAssign = () => {
                   assignedBoxes: 0,
                   price: 0,
                   canEdit: true,
+                  hasProductCount,
+                  productCount: '',
+                  multiple_box_id: item.multiple_box_id || null,
+                  multiple_box_name: item.multiple_box_name || null
                 };
               });
 
@@ -756,6 +783,7 @@ const LocalOrderAssign = () => {
                   row.assignedQty = parseFloat(firstAssignment.assignedQty) || 0;
                   row.price = parseFloat(firstAssignment.price) || 0;
                   row.addressInfo = firstAssignment.address || '';
+                  row.productCount = firstAssignment.productCount || firstAssignment.product_count || row.productCount || '';
 
                   // Find entity and set name using freshly fetched data
                   let entity = null;
@@ -876,12 +904,23 @@ const LocalOrderAssign = () => {
     }
 
     let allProductsList = [];
+    let productCountRecords = [];
     try {
-      const productsRes = await getAllProducts(1, 1000);
+      const [productsRes, productCountsRes] = await Promise.all([
+        getAllProducts(1, 1000),
+        getAllProductCounts(1, 1000, '').catch(() => ({ data: [] }))
+      ]);
       allProductsList = productsRes.success ? productsRes.data || [] : [];
+      productCountRecords = productCountsRes?.data || [];
     } catch (error) {
-      console.error('Error fetching products:', error);
+      console.error('Error fetching products/product counts:', error);
     }
+
+    const productCountEnabledIds = new Set(
+      productCountRecords
+        .filter(r => (r.product_status || '').toLowerCase() === 'active')
+        .map(r => String(r.pid))
+    );
 
     if (items.length > 0) {
       const rows = items.map((item) => {
@@ -894,6 +933,8 @@ const LocalOrderAssign = () => {
         if (matchedProduct?.current_price) {
           currentPrice = parseFloat(matchedProduct.current_price);
         }
+
+        const hasProductCount = matchedProduct && productCountEnabledIds.has(String(matchedProduct.pid));
 
         return {
           id: item.oiid,
@@ -909,6 +950,10 @@ const LocalOrderAssign = () => {
           assignedBoxes: 0,
           price: 0,
           canEdit: true,
+          hasProductCount,
+          productCount: '',
+          multiple_box_id: item.multiple_box_id || null,
+          multiple_box_name: item.multiple_box_name || null
         };
       });
       setProductRows(rows);
@@ -980,7 +1025,8 @@ const LocalOrderAssign = () => {
         price: parseFloat(row.price) || 0,
         place: row.place || '',
         tapeColor: row.tapeColor || '',
-        address: row.addressInfo || ''
+        address: row.addressInfo || '',
+        productCount: row.productCount ?? ''
       }));
 
       // Add remaining assignments
@@ -1002,7 +1048,8 @@ const LocalOrderAssign = () => {
               price: parseFloat(remainingData.price) || 0,
               place: remainingData.place || '',
               tapeColor: remainingData.tapeColor || '',
-              address: remainingData.addressInfo || ''
+              address: remainingData.addressInfo || '',
+              productCount: originalRow.productCount ?? ''
             });
           }
         }
@@ -1111,38 +1158,38 @@ const LocalOrderAssign = () => {
   };
 
   // Create display rows with remaining quantities as separate rows
+  // Local orders are net-weight based only; box fields are ignored here
   const getDisplayRows = () => {
     const displayRows = [];
 
     productRows.forEach((row, index) => {
+      // Main row
       displayRows.push({
         ...row,
         displayIndex: index,
         isRemaining: false
       });
 
-      // Calculate total remaining quantity OR remaining boxes
-      const hasRemainingQty = row.assignedQty > 0 && row.assignedQty < row.net_weight;
-      const hasRemainingBoxes = row.assignedBoxes > 0 && row.assignedBoxes < row.num_boxes;
+      // Remaining quantity based on net weight (kg) only
+      const hasRemainingQty =
+        parseFloat(row.assignedQty) > 0 &&
+        parseFloat(row.assignedQty) < parseFloat(row.net_weight || 0);
 
-      if (hasRemainingQty || hasRemainingBoxes) {
-        let remainingQty = hasRemainingQty ? row.net_weight - row.assignedQty : 0;
-        let remainingBoxes = hasRemainingBoxes ? row.num_boxes - row.assignedBoxes : 0;
+      if (hasRemainingQty) {
+        let remainingQty =
+          (parseFloat(row.net_weight) || 0) - (parseFloat(row.assignedQty) || 0);
 
         // Collect all remaining assignments for this product
         const remainingKeys = Object.keys(remainingRowAssignments)
           .filter(k => k.startsWith(`${row.id}-remaining`))
           .sort();
 
-        // Display existing remaining assignments
+        // Existing remaining assignments
         remainingKeys.forEach(key => {
           const data = remainingRowAssignments[key] || {};
           const assignedQty = parseFloat(data.assignedQty) || 0;
-          const assignedBoxesVal = parseFloat(data.assignedBoxes) || 0;
 
-          // Show the actual remaining needed, not the picked quantity
           const displayQty = remainingQty > 0 ? remainingQty : 0;
-          const displayBoxes = remainingBoxes > 0 ? remainingBoxes : 0;
 
           displayRows.push({
             id: key,
@@ -1150,12 +1197,10 @@ const LocalOrderAssign = () => {
             product_name: row.product_name,
             quantity: `${displayQty} kg`,
             net_weight: displayQty,
-            num_boxes: displayBoxes,
             assignedTo: data.assignedTo || '',
             entityType: data.entityType || '',
             marketPrice: data.marketPrice || row.marketPrice || 0,
-            assignedQty: assignedQty,
-            assignedBoxes: assignedBoxesVal,
+            assignedQty,
             price: parseFloat(data.price) || 0,
             canEdit: true,
             displayIndex: index,
@@ -1163,20 +1208,19 @@ const LocalOrderAssign = () => {
             originalRowIndex: index
           });
 
-          // Deduct only up to the remaining quantity/boxes (excess goes to stock)
           if (assignedQty > 0) {
             remainingQty = Math.max(0, remainingQty - assignedQty);
           }
-          if (assignedBoxesVal > 0) {
-            remainingBoxes = Math.max(0, remainingBoxes - assignedBoxesVal);
-          }
         });
 
-        // Add a new row for unassigned remaining quantity/boxes if there's still quantity/boxes left
-        const allRemainingHaveQty = remainingKeys.length === 0 ||
-          remainingKeys.every(k => (parseFloat(remainingRowAssignments[k].assignedQty) || 0) > 0 || (parseFloat(remainingRowAssignments[k].assignedBoxes) || 0) > 0);
+        // New remaining row if there is still quantity left
+        const allRemainingHaveQty =
+          remainingKeys.length === 0 ||
+          remainingKeys.every(
+            k => (parseFloat(remainingRowAssignments[k].assignedQty) || 0) > 0
+          );
 
-        if ((remainingQty > 0 || remainingBoxes > 0) && allRemainingHaveQty) {
+        if (remainingQty > 0 && allRemainingHaveQty) {
           const newRemainingKey = `${row.id}-remaining-${remainingKeys.length}`;
           const remainingData = remainingRowAssignments[newRemainingKey] || {};
 
@@ -1186,12 +1230,10 @@ const LocalOrderAssign = () => {
             product_name: row.product_name,
             quantity: `${remainingQty} kg`,
             net_weight: remainingQty,
-            num_boxes: remainingBoxes,
             assignedTo: remainingData.assignedTo || '',
             entityType: remainingData.entityType || '',
             marketPrice: remainingData.marketPrice || row.marketPrice || 0,
             assignedQty: parseFloat(remainingData.assignedQty) || 0,
-            assignedBoxes: parseFloat(remainingData.assignedBoxes) || 0,
             price: parseFloat(remainingData.price) || 0,
             canEdit: true,
             displayIndex: index,
@@ -1260,45 +1302,27 @@ const LocalOrderAssign = () => {
         </div>
         <p className="text-sm text-gray-600 mb-6">Assign order products to farmers, suppliers, and third parties for collection and delivery to packaging location</p>
 
-        {/* Totals Summary */}
-        <div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {/* Total Net Weight - Always visible */}
+        {/* Totals Summary - Local orders are based on net weight (kg) only */}
+        <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Total Net Weight */}
           <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">
             <p className="text-xs font-semibold text-gray-600 uppercase mb-1">Total Net Weight</p>
             <p className="text-2xl font-bold text-blue-700">
-              {productRows.reduce((sum, p) => sum + (parseFloat(p.net_weight) || 0), 0).toFixed(2)} kg
+              {productRows
+                .reduce((sum, p) => sum + (parseFloat(p.net_weight) || 0), 0)
+                .toFixed(2)}{' '}
+              kg
             </p>
           </div>
 
-          {/* Total No. of Boxes - Always visible for local orders */}
-          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 border border-green-200">
-            <p className="text-xs font-semibold text-gray-600 uppercase mb-1">Total No. of Boxes</p>
-            <p className="text-2xl font-bold text-green-700">
-              {productRows.reduce((sum, p) => {
-                const numBoxes = p.num_boxes;
-                if (typeof numBoxes === 'string') {
-                  const match = numBoxes.match(/^(\d+(?:\.\d+)?)/);
-                  return sum + (match ? parseFloat(match[1]) : 0);
-                }
-                return sum + (parseFloat(numBoxes) || 0);
-              }, 0).toFixed(2)}
-            </p>
-          </div>
-
-          {/* Total Gross Weight - Always visible for local orders */}
+          {/* Total Gross Weight (same as net for local orders) */}
           <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 border border-purple-200">
             <p className="text-xs font-semibold text-gray-600 uppercase mb-1">Total Gross Weight</p>
             <p className="text-2xl font-bold text-purple-700">
-              {(() => {
-                const totalNet = productRows.reduce((sum, p) => sum + (parseFloat(p.net_weight) || 0), 0);
-                const totalBoxWeight = productRows.reduce((sum, p) => {
-                  const numBoxes = typeof p.num_boxes === 'string'
-                    ? (p.num_boxes.match(/^(\d+(?:\.\d+)?)/)?.[1] || 0)
-                    : (p.num_boxes || 0);
-                  return sum + (parseFloat(numBoxes) * 0.5); // Assuming avg box weight 0.5kg
-                }, 0);
-                return (totalNet + totalBoxWeight).toFixed(2);
-              })()} kg
+              {productRows
+                .reduce((sum, p) => sum + (parseFloat(p.net_weight) || 0), 0)
+                .toFixed(2)}{' '}
+              kg
             </p>
           </div>
         </div>
@@ -1311,6 +1335,7 @@ const LocalOrderAssign = () => {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Product</th>
                 {isBoxBasedOrder && <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">No of Boxes/Bags</th>}
                 {!isBoxBasedOrder && <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Quantity Needed</th>}
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Count</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Entity Type <span className="text-red-500">*</span></th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Name <span className="text-red-500">*</span></th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Address</th>
@@ -1330,6 +1355,13 @@ const LocalOrderAssign = () => {
                       <span className="text-sm font-medium text-gray-900">
                         {productName}
                       </span>
+                      {row.multiple_box_name && (
+                        <span className="block mt-1">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-violet-100 text-violet-700 border border-violet-200">
+                            📦 {row.multiple_box_name}
+                          </span>
+                        </span>
+                      )}
                       {row.isRemaining && (
                         <span className="block text-xs text-yellow-700 italic mt-1">
                           Remaining Quantity
@@ -1341,12 +1373,24 @@ const LocalOrderAssign = () => {
                         <span className="text-sm text-gray-600">{row.num_boxes || '-'}</span>
                       </td>
                     )}
-                    {!isBoxBasedOrder && (
-                      <td className="px-4 py-4">
-                        <span className="text-sm text-gray-900">{row.quantity}</span>
-                      </td>
-                    )}
-                    <td className="px-4 py-4">
+                {!isBoxBasedOrder && (
+                  <td className="px-4 py-4">
+                    <span className="text-sm text-gray-900">{row.quantity}</span>
+                  </td>
+                )}
+                <td className="px-4 py-4">
+                  {row.hasProductCount && !row.isRemaining ? (
+                    <input
+                      type="text"
+                      value={row.productCount ?? ''}
+                      onChange={(e) => handleProductCountChange(row.displayIndex, e.target.value)}
+                      className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                    />
+                  ) : (
+                    <span className="text-sm text-gray-400">-</span>
+                  )}
+                </td>
+                <td className="px-4 py-4">
                       <select
                         ref={(el) => {
                           if (el) inputGridRefs.current[`${index}-0`] = el;
@@ -1602,10 +1646,26 @@ const LocalOrderAssign = () => {
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex-1">
                     <h3 className="font-semibold text-gray-900">{productName}</h3>
+                    {row.multiple_box_name && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-violet-100 text-violet-700 border border-violet-200 mt-1">
+                        📦 {row.multiple_box_name}
+                      </span>
+                    )}
                     {row.isRemaining && (
                       <span className="text-xs text-yellow-700 italic">Remaining Quantity</span>
                     )}
                     <p className="text-sm text-gray-600">{row.quantity}</p>
+                    {row.hasProductCount && !row.isRemaining && (
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className="text-xs font-semibold text-gray-700">Count:</span>
+                        <input
+                          type="text"
+                          value={row.productCount ?? ''}
+                          onChange={(e) => handleProductCountChange(row.displayIndex, e.target.value)}
+                          className="w-20 px-2 py-1 border border-gray-300 rounded-md text-xs focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
 

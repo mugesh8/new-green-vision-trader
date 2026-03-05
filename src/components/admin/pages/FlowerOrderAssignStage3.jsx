@@ -145,6 +145,7 @@ const FlowerOrderAssignStage3 = () => {
         let stage2LabourMap = {};
         let stage2BoxStatusMap = {}; // Track packed (available) boxes from Stage 2
         let stage3Products = [];
+        let productCountMap = {};
         try {
           const assignmentResponse = await getFlowerOrderAssignment(id);
           const assignmentData = assignmentResponse.data;
@@ -195,6 +196,42 @@ const FlowerOrderAssignStage3 = () => {
               console.log('Labour Map from stage1_summary_data (still arrays):', stage2LabourMap);
             } catch (e) {
               console.error('Error parsing stage1_summary_data:', e);
+            }
+          }
+
+          // Get product count from Stage 1 detailed data
+          if (assignmentData.stage1_data) {
+            try {
+              const stage1Data = typeof assignmentData.stage1_data === 'string'
+                ? JSON.parse(assignmentData.stage1_data)
+                : assignmentData.stage1_data;
+              const assignments = stage1Data.productAssignments || stage1Data.assignments || [];
+              assignments.forEach(a => {
+                const key = a.id || a.oiid;
+                if (!key) return;
+                const countVal = a.productCount != null ? a.productCount : a.product_count;
+                if (countVal != null && productCountMap[key] == null) {
+                  productCountMap[key] = countVal;
+                }
+              });
+            } catch (e) {
+              console.error('Error parsing stage1_data for product counts:', e);
+            }
+          } else if (assignmentData.product_assignments) {
+            try {
+              const assignments = typeof assignmentData.product_assignments === 'string'
+                ? JSON.parse(assignmentData.product_assignments)
+                : assignmentData.product_assignments;
+              assignments.forEach(a => {
+                const key = a.id || a.oiid;
+                if (!key) return;
+                const countVal = a.productCount != null ? a.productCount : a.product_count;
+                if (countVal != null && productCountMap[key] == null) {
+                  productCountMap[key] = countVal;
+                }
+              });
+            } catch (e) {
+              console.error('Error parsing product_assignments for product counts:', e);
             }
           }
 
@@ -381,6 +418,7 @@ const FlowerOrderAssignStage3 = () => {
               const boxStatus = stage2BoxStatusMap[s3Product.oiid] || { available: 0 };
               const availableBoxes = boxStatus.available || 0;
               const pendingBoxes = Math.max(totalBoxes - availableBoxes, 0);
+              const productCount = productCountMap[s3Product.oiid] ?? '';
 
               return {
                 id: s3Product.id || `${s3Product.oiid}-${s3Product.assignmentIndex || 0}`,
@@ -400,7 +438,8 @@ const FlowerOrderAssignStage3 = () => {
                 phoneNumber: s3Product.phoneNumber || '',
                 vehicleCapacity: s3Product.vehicleCapacity || '',
                 status: s3Product.status || 'pending',
-                assignmentIndex: s3Product.assignmentIndex || 0
+                assignmentIndex: s3Product.assignmentIndex || 0,
+                productCount
               };
             });
           } else {
@@ -414,6 +453,7 @@ const FlowerOrderAssignStage3 = () => {
               const boxStatus = stage2BoxStatusMap[item.oiid] || { available: 0 };
               const availableBoxes = boxStatus.available || 0;
               const pendingBoxes = Math.max(totalBoxes - availableBoxes, 0);
+              const productCount = productCountMap[item.oiid] ?? '';
 
               //console.log(`Product ${item.oiid}: Labour = ${labourNames}`);
 
@@ -435,7 +475,8 @@ const FlowerOrderAssignStage3 = () => {
                 phoneNumber: '',
                 vehicleCapacity: '',
                 status: 'pending',
-                assignmentIndex: 0
+                assignmentIndex: 0,
+                productCount
               };
             });
           }
@@ -1117,6 +1158,7 @@ const FlowerOrderAssignStage3 = () => {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Product</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Gross Weight</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Count</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Assigned Labour</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Total Boxes/Bags</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Avl Box</th>
@@ -1149,6 +1191,15 @@ const FlowerOrderAssignStage3 = () => {
                     {isFirstOfGroup && (
                       <td className="px-4 py-4" rowSpan={sameProductRows.length}>
                         <span className="text-sm text-gray-900">{row.grossWeight}</span>
+                      </td>
+                    )}
+                    {isFirstOfGroup && (
+                      <td className="px-4 py-4" rowSpan={sameProductRows.length}>
+                        {row.productCount != null && row.productCount !== '' ? (
+                          <span className="text-sm font-semibold text-gray-900">{row.productCount}</span>
+                        ) : (
+                          <span className="text-sm text-gray-400">-</span>
+                        )}
                       </td>
                     )}
                     {isFirstOfGroup && (

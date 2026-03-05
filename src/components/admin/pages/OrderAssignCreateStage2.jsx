@@ -510,14 +510,6 @@ const OrderAssignCreateStage2 = () => {
   }, [id]);
 
   const handleSaveStage2 = async () => {
-    // Validate that all products have labour assigned (check only first vendor row)
-    const firstVendorRows = productRows.filter(row => row.isFirstVendor);
-    const missingLabour = firstVendorRows.filter(row => !row.labour || row.labour.length === 0);
-    if (missingLabour.length > 0) {
-      alert(`Please assign labour for: ${missingLabour.map(r => r.product).join(', ')}`);
-      return;
-    }
-
     try {
       // Prepare product assignments for backend
       const productAssignments = productRows.map(row => {

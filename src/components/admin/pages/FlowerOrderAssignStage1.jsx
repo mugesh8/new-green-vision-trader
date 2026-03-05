@@ -11,6 +11,7 @@ import { getAllLabours } from '../../../api/labourApi';
 import { getPresentLaboursToday } from '../../../api/labourAttendanceApi';
 import { getPresentDriversToday } from '../../../api/driverApi';
 import { getAllProducts } from '../../../api/productApi';
+import { getAllProductCounts } from '../../../api/productCountApi';
 import { getAvailableStock } from '../../../api/orderAssignmentApi';
 import { getVegetableAvailabilityByFarmer } from '../../../api/vegetableAvailabilityApi';
 
@@ -149,6 +150,16 @@ const FlowerOrderAssignStage1 = () => {
     }
   };
 
+  // Update product count for a main row (used when Product Count toggle is ON)
+  const handleProductCountChange = (rowIndex, value) => {
+    setProductRows(prev => {
+      const updated = [...prev];
+      if (!updated[rowIndex]) return prev;
+      updated[rowIndex] = { ...updated[rowIndex], productCount: value };
+      return updated;
+    });
+  };
+
   // Helper function to create delivery route for an assignment
   const createDeliveryRoute = (entity, entityType, row, assignedQty, isRemaining = false) => {
     const routeId = isRemaining
@@ -243,16 +254,23 @@ const FlowerOrderAssignStage1 = () => {
           }
         }
 
-        const [farmersRes, suppliersRes, thirdPartiesRes, laboursRes, driversRes, productsRes] = await Promise.all([
+        const [farmersRes, suppliersRes, thirdPartiesRes, laboursRes, driversRes, productsRes, productCountsRes] = await Promise.all([
           getAllFarmers(),
           getAllSuppliers(),
           getAllThirdParties(),
           getPresentLaboursToday(),
           getPresentDriversToday(),
-          getAllProducts(1, 1000)
+          getAllProducts(1, 1000),
+          getAllProductCounts(1, 1000, '').catch(() => ({ data: [] }))
         ]);
 
         const allProductsList = productsRes.success ? productsRes.data || [] : [];
+        const productCountRecords = productCountsRes?.data || [];
+        const productCountEnabledIds = new Set(
+          productCountRecords
+            .filter(r => (r.product_status || '').toLowerCase() === 'active')
+            .map(r => String(r.pid))
+        );
 
         // Store data in local variables for immediate use
         const farmers = farmersRes.data || [];
@@ -338,6 +356,8 @@ const FlowerOrderAssignStage1 = () => {
                 currentPrice = parseFloat(matchedProduct.current_price);
               }
 
+              const hasProductCount = matchedProduct && productCountEnabledIds.has(String(matchedProduct.pid));
+
               return {
                 id: item.oiid,
                 product: (item.product || item.product_name || '')?.replace(/^\d+\s*-\s*/, ''),
@@ -352,7 +372,9 @@ const FlowerOrderAssignStage1 = () => {
                 assignedBoxes: 0,
                 price: 0,
                 canEdit: true,
-                place: ''
+                place: '',
+                hasProductCount,
+                productCount: ''
               };
             });
 
@@ -394,6 +416,7 @@ const FlowerOrderAssignStage1 = () => {
                 row.price = parseFloat(firstAssignment.price) || 0;
                 row.place = firstAssignment.place || '';
                 row.addressInfo = firstAssignment.address || '';
+                row.productCount = firstAssignment.productCount || firstAssignment.product_count || row.productCount || '';
 
                 // Find entity and set name using freshly fetched data
                 let entity = null;
@@ -982,6 +1005,7 @@ const FlowerOrderAssignStage1 = () => {
                     {isBoxBasedOrder && <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Needed No of Boxes/Bags</th>}
                     {isBoxBasedOrder && <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Needed Weight (kg)</th>}
                     {!isBoxBasedOrder && <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Quantity Needed</th>}
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Count</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Entity Type <span className="text-red-500">*</span></th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Name <span className="text-red-500">*</span></th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Address</th>
@@ -1022,6 +1046,18 @@ const FlowerOrderAssignStage1 = () => {
                         <span className="text-sm text-gray-900">{row.quantity}</span>
                       </td>
                     )}
+                    <td className="px-4 py-4">
+                      {row.hasProductCount && !row.isRemaining ? (
+                        <input
+                          type="text"
+                          value={row.productCount ?? ''}
+                          onChange={(e) => handleProductCountChange(row.displayIndex, e.target.value)}
+                          className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                        />
+                      ) : (
+                        <span className="text-sm text-gray-400">-</span>
+                      )}
+                    </td>
                     <td className="px-4 py-4">
                       <select
                         ref={(el) => {
@@ -1302,6 +1338,17 @@ const FlowerOrderAssignStage1 = () => {
                     )}
                     <p className="text-sm text-gray-600">{row.quantity}</p>
                     <p className="text-xs text-gray-500 mt-1">Boxes/Bags: {row.num_boxes || '-'}</p>
+                    {row.hasProductCount && !row.isRemaining && (
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className="text-xs font-semibold text-gray-700">Count:</span>
+                        <input
+                          type="text"
+                          value={row.productCount ?? ''}
+                          onChange={(e) => handleProductCountChange(row.displayIndex, e.target.value)}
+                          className="w-20 px-2 py-1 border border-gray-300 rounded-md text-xs focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
 

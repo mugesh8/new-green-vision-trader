@@ -1,19 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Search, Plus, X } from 'lucide-react';
+import { Search, Plus, X, ChevronDown, Pencil, Trash2 } from 'lucide-react';
 import { createCategory, getAllCategories, updateCategory, deleteCategory } from '../../../api/categoryApi';
 import { createProduct, getAllProducts, updateProduct, deleteProduct } from '../../../api/productApi';
+import { createMultipleProductBox, getAllMultipleProductBoxes, updateMultipleProductBox, deleteMultipleProductBox } from '../../../api/multipleProductBoxApi';
 import { getBoxesAndBags } from '../../../api/inventoryApi';
 import { getAllCustomers } from '../../../api/customerApi';
 import { getPreferencesByCustomer, createPreference, updatePreference, deletePreference } from '../../../api/customerProductPreferenceApi';
+import { getAllProductCounts, updateProductCountStatus } from '../../../api/productCountApi';
 import { BASE_URL } from '../../../config/config';
 
 const AddProduct = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const pageFromUrl = parseInt(searchParams.get('page') || '1', 10);
   const [activeTab, setActiveTab] = useState('product');
   const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(Math.max(1, isNaN(pageFromUrl) ? 1 : pageFromUrl));
+  const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalProducts, setTotalProducts] = useState(0);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -33,6 +32,12 @@ const AddProduct = () => {
   const [customerOrderPage, setCustomerOrderPage] = useState(1);
   const customerOrderItemsPerPage = 20;
   const [customerOrderSearchQuery, setCustomerOrderSearchQuery] = useState('');
+  const [productCountPage, setProductCountPage] = useState(1);
+  const productCountItemsPerPage = 20;
+  const [productCountSearchQuery, setProductCountSearchQuery] = useState('');
+  const [productCountList, setProductCountList] = useState([]);
+  const [productCountTotal, setProductCountTotal] = useState(0);
+  const [productCountToggleLoading, setProductCountToggleLoading] = useState(null);
 
   const [categories, setCategories] = useState([]);
   const [vegetables, setVegetables] = useState([]);
@@ -44,6 +49,23 @@ const AddProduct = () => {
   const [productPreferences, setProductPreferences] = useState([]);
   const [customerPreferences, setCustomerPreferences] = useState({});
   const [editingPreference, setEditingPreference] = useState(null);
+
+  // Multiple Product Box state
+  const [multiBoxProducts, setMultiBoxProducts] = useState([]);
+  const [multiBoxSelectedProducts, setMultiBoxSelectedProducts] = useState([]);
+  const [multiBoxProductNetWeights, setMultiBoxProductNetWeights] = useState({});
+  const [multiBoxSelectedPackings, setMultiBoxSelectedPackings] = useState([]);
+  const [multiBoxFormData, setMultiBoxFormData] = useState({
+    name: '',
+    short: '',
+    status: 'active'
+  });
+  const [multipleProductBoxes, setMultipleProductBoxes] = useState([]);
+  const [openMultiBoxDropdown, setOpenMultiBoxDropdown] = useState(false);
+  const [editingMultiBoxId, setEditingMultiBoxId] = useState(null);
+  const [showEditMultiBoxModal, setShowEditMultiBoxModal] = useState(false);
+  const [showDeleteMultiBoxModal, setShowDeleteMultiBoxModal] = useState(false);
+  const [deletingMultiBoxId, setDeletingMultiBoxId] = useState(null);
 
   const getStatusColor = (status) => {
     return status === 'Active'
@@ -72,10 +94,6 @@ const AddProduct = () => {
     setLoading(true);
     try {
       const formData = new FormData(e.target);
-
-      // Handle checkbox for default status in edit
-      const isDefaultChecked = e.target.is_default?.checked || false;
-      formData.set('default_status', isDefaultChecked);
       formData.set('packing_type', editSelectedPackings.join(', '));
 
       await updateProduct(vegetables[editingIndex].pid, formData);
@@ -275,31 +293,6 @@ const AddProduct = () => {
     }
   };
 
-  // Sync currentPage to URL so it persists on refresh
-  useEffect(() => {
-    if (activeTab === 'product' && currentPage > 1) {
-      setSearchParams(prev => {
-        const next = new URLSearchParams(prev);
-        next.set('page', String(currentPage));
-        return next;
-      }, { replace: true });
-    } else if (activeTab === 'product' && currentPage === 1) {
-      setSearchParams(prev => {
-        const next = new URLSearchParams(prev);
-        next.delete('page');
-        return next;
-      }, { replace: true });
-    }
-  }, [activeTab, currentPage]);
-
-  // Sync from URL when user navigates back/forward
-  useEffect(() => {
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    if (!isNaN(page) && page >= 1 && page !== currentPage) {
-      setCurrentPage(page);
-    }
-  }, [searchParams]);
-
   useEffect(() => {
     // Always fetch all categories for dropdowns
     fetchAllCategories();
@@ -310,10 +303,46 @@ const AddProduct = () => {
     }
     if (activeTab === 'product') {
       fetchProducts();
+    } else if (activeTab === 'productCount') {
+      fetchProductCountList();
     } else if (activeTab === 'history') {
       fetchPriceHistory();
+    } else if (activeTab === 'multipleProductBox') {
+      fetchMultiBoxProducts();
+      fetchMultipleProductBoxes();
+    } else if (activeTab === 'customerOrder') {
+      fetchCustomers();
     }
-  }, [activeTab, currentPage, searchQuery]);
+  }, [activeTab, currentPage, searchQuery, productCountPage, productCountSearchQuery]);
+
+  const fetchProductCountList = async () => {
+    try {
+      const res = await getAllProductCounts(productCountPage, productCountItemsPerPage, productCountSearchQuery);
+      setProductCountList(res.data || []);
+      setProductCountTotal(res.pagination?.totalItems ?? res.data?.length ?? 0);
+    } catch (error) {
+      console.error('Failed to fetch product count list:', error);
+    }
+  };
+
+  const getProductCountTotalPages = () => {
+    return Math.ceil(productCountTotal / productCountItemsPerPage) || 1;
+  };
+
+  const handleProductCountStatusToggle = async (pid) => {
+    const record = productCountList.find(r => r.pid === pid);
+    if (!record) return;
+    const newStatus = (record.product_status || 'inactive') === 'active' ? 'inactive' : 'active';
+    setProductCountToggleLoading(pid);
+    try {
+      await updateProductCountStatus(pid, newStatus);
+      setProductCountList(prev => prev.map(r => (r.pid === pid ? { ...r, product_status: newStatus } : r)));
+    } catch (error) {
+      alert(error.response?.data?.message || 'Failed to update product count status');
+    } finally {
+      setProductCountToggleLoading(null);
+    }
+  };
 
   const fetchPackingOptions = async () => {
     try {
@@ -362,16 +391,175 @@ const AddProduct = () => {
     }
   };
 
+  const fetchMultiBoxProducts = async () => {
+    try {
+      const response = await getAllProducts(1, 1000);
+      const products = response.data || [];
+      setMultiBoxProducts(products);
+    } catch (error) {
+      console.error('Failed to fetch products for multiple product box:', error);
+    }
+  };
+
+  const parseJsonField = (field) => {
+    if (Array.isArray(field)) return field;
+    if (typeof field === 'string') {
+      try {
+        const parsed = JSON.parse(field);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  };
+
+  const fetchMultipleProductBoxes = async () => {
+    try {
+      const response = await getAllMultipleProductBoxes();
+      const boxes = response.data || [];
+
+      const normalizedBoxes = boxes.map((box) => {
+        const productIds = parseJsonField(box.product_ids);
+        const packingTypes = parseJsonField(box.packing_types);
+        let netWeights = {};
+        if (box.net_weights) {
+          try {
+            const parsed = typeof box.net_weights === 'string' ? JSON.parse(box.net_weights) : box.net_weights;
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              netWeights = parsed;
+            }
+          } catch {
+            netWeights = {};
+          }
+        }
+        return {
+          id: box.id,
+          name: box.name,
+          short: box.short || '',
+          productIds: productIds.map((pid) => String(pid)),
+          packingTypes: packingTypes.map((pt) => String(pt)),
+          netWeights,
+          status: box.status || 'active'
+        };
+      });
+
+      setMultipleProductBoxes(normalizedBoxes);
+    } catch (error) {
+      console.error('Failed to fetch multiple product boxes:', error);
+    }
+  };
+
+  const handleMultiBoxSubmit = async (e) => {
+    e.preventDefault();
+
+    const name = multiBoxFormData.name.trim();
+    const short = multiBoxFormData.short.trim();
+
+    if (!name || multiBoxSelectedProducts.length === 0) {
+      alert('Please enter a name and select at least one product.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const payload = {
+        name,
+        short: short || null,
+        product_ids: multiBoxSelectedProducts,
+        net_weights: multiBoxProductNetWeights,
+        packing_types: multiBoxSelectedPackings,
+        status: multiBoxFormData.status
+      };
+
+      await createMultipleProductBox(payload);
+      alert('Multiple product box created successfully!');
+      await fetchMultipleProductBoxes();
+
+      setMultiBoxFormData({ name: '', short: '', status: 'active' });
+      setMultiBoxSelectedProducts([]);
+      setMultiBoxProductNetWeights({});
+      setMultiBoxSelectedPackings([]);
+      setShowAddModal(false);
+    } catch (error) {
+      alert(error.response?.data?.message || 'Failed to create multiple product box');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditMultiBox = (box) => {
+    setEditingMultiBoxId(box.id);
+    setMultiBoxFormData({ name: box.name, short: box.short || '', status: box.status || 'active' });
+    setMultiBoxSelectedProducts([...box.productIds]);
+    setMultiBoxProductNetWeights(box.netWeights || {});
+    setMultiBoxSelectedPackings([...box.packingTypes]);
+    setShowEditMultiBoxModal(true);
+  };
+
+  const handleEditMultiBoxSubmit = async (e) => {
+    e.preventDefault();
+    const name = multiBoxFormData.name.trim();
+    const short = multiBoxFormData.short.trim();
+
+    if (!name || multiBoxSelectedProducts.length === 0) {
+      alert('Please enter a name and select at least one product.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const payload = {
+        name,
+        short: short || null,
+        product_ids: multiBoxSelectedProducts,
+        net_weights: multiBoxProductNetWeights,
+        packing_types: multiBoxSelectedPackings,
+        status: multiBoxFormData.status
+      };
+      await updateMultipleProductBox(editingMultiBoxId, payload);
+      alert('Multiple product box updated successfully!');
+      await fetchMultipleProductBoxes();
+      setShowEditMultiBoxModal(false);
+      setEditingMultiBoxId(null);
+      setMultiBoxFormData({ name: '', short: '', status: 'active' });
+      setMultiBoxSelectedProducts([]);
+      setMultiBoxProductNetWeights({});
+      setMultiBoxSelectedPackings([]);
+    } catch (error) {
+      alert(error.response?.data?.message || 'Failed to update multiple product box');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteMultiBox = (box) => {
+    setDeletingMultiBoxId(box.id);
+    setShowDeleteMultiBoxModal(true);
+  };
+
+  const confirmDeleteMultiBox = async () => {
+    if (!deletingMultiBoxId) return;
+    setLoading(true);
+    try {
+      await deleteMultipleProductBox(deletingMultiBoxId);
+      alert('Multiple product box deleted successfully!');
+      await fetchMultipleProductBoxes();
+      setShowDeleteMultiBoxModal(false);
+      setDeletingMultiBoxId(null);
+    } catch (error) {
+      alert(error.response?.data?.message || 'Failed to delete multiple product box');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleAddSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
       const formData = new FormData(e.target);
-
-      // Handle checkbox for default status
       if (activeTab === 'product') {
-        const isDefaultChecked = e.target.is_default.checked;
-        formData.set('default_status', isDefaultChecked);
         formData.set('packing_type', selectedPackings.join(', '));
       }
 
@@ -398,17 +586,19 @@ const AddProduct = () => {
   const fetchCustomers = async () => {
     try {
       const response = await getAllCustomers(1, 1000);
-      const allCustomers = response.data || [];
+      const allCustomers = response?.data ?? response?.customers ?? (Array.isArray(response) ? response : []);
       const reversedCustomers = [...allCustomers].reverse();
       setCustomers(reversedCustomers);
       if (reversedCustomers.length > 0) {
-        const firstCustomerId = reversedCustomers[0].customer_id;
+        const firstCustomer = reversedCustomers[0];
+        const firstCustomerId = firstCustomer.customer_id ?? firstCustomer.id ?? firstCustomer.cust_id;
         setSelectedCustomerId(firstCustomerId);
         await fetchCustomerPreferences(firstCustomerId);
       }
       await fetchAllProducts();
     } catch (error) {
       console.error('Failed to fetch customers:', error);
+      await fetchAllProducts();
     }
   };
 
@@ -433,86 +623,108 @@ const AddProduct = () => {
   const fetchCustomerPreferences = async (customerId) => {
     try {
       const response = await getPreferencesByCustomer(customerId);
-      const preferences = response.data || [];
-      
-      const allProductsResponse = await getAllProducts(1, 1000);
-      const allProducts = allProductsResponse.data || [];
-      
-      const mergedPrefs = allProducts.map(product => {
-        const existingPref = preferences.find(p => p.product_id === product.pid);
-        return {
-          product_id: product.pid,
-          product_name: product.product_name,
-          enabled: existingPref ? existingPref.enabled : false,
-          display_order: existingPref ? existingPref.display_order || '' : ''
-        };
+      const items = Array.isArray(response?.data) ? response.data : [];
+
+      // Base list: all products, so every product can get a display order entry
+      let baseProducts = productPreferences;
+
+      // If base list not yet loaded, fetch it now
+      if (!baseProducts || baseProducts.length === 0) {
+        try {
+          const allProductsResponse = await getAllProducts(1, 1000);
+          const allProducts = allProductsResponse.data || [];
+          baseProducts = allProducts.map(product => ({
+            product_id: product.pid,
+            product_name: product.product_name,
+            enabled: false,
+            display_order: ''
+          }));
+        } catch (prodError) {
+          console.error('Failed to fetch products for customer preferences:', prodError);
+          baseProducts = [];
+        }
+      }
+
+      // Merge customer's saved prefs onto the full product list
+      const merged = baseProducts.map(base => {
+        const pref = items.find(it => it.product_id === base.product_id);
+        if (pref) {
+          return {
+            ...base,
+            enabled: !!pref.enabled,
+            display_order: pref.display_order ?? ''
+          };
+        }
+        return base;
       });
-      
+
       setCustomerPreferences(prev => ({
         ...prev,
-        [customerId]: mergedPrefs
+        [customerId]: merged
       }));
     } catch (error) {
       console.error('Failed to fetch customer preferences:', error);
+      setCustomerPreferences(prev => ({
+        ...prev,
+        [customerId]: []
+      }));
     }
   };
 
-  const handlePreferenceToggle = (productId) => {
+  const handlePreferenceToggle = (itemKey) => {
     const currentPrefs = customerPreferences[selectedCustomerId] || productPreferences;
-    const product = currentPrefs.find(p => p.product_id === productId);
-    
+    const item = currentPrefs.find(p => `product_${p.product_id}` === itemKey);
+
     setCustomerPreferences(prev => ({
       ...prev,
-      [selectedCustomerId]: (prev[selectedCustomerId] || productPreferences).map(p => 
-        p.product_id === productId ? { ...p, enabled: !p.enabled, display_order: !p.enabled ? p.display_order : '' } : p
+      [selectedCustomerId]: (prev[selectedCustomerId] || productPreferences).map(p =>
+        `product_${p.product_id}` === itemKey ? { ...p, enabled: !p.enabled, display_order: !p.enabled ? p.display_order : '' } : p
       )
     }));
-    
-    // If enabling for the first time, set editing mode
-    if (!product.enabled) {
-      setEditingPreference(productId);
+
+    if (item && !item.enabled) {
+      setEditingPreference(itemKey);
     }
   };
 
-  const handleDisplayOrderChange = (productId, value) => {
+  const handleDisplayOrderChange = (itemKey, value) => {
     setCustomerPreferences(prev => ({
       ...prev,
-      [selectedCustomerId]: (prev[selectedCustomerId] || productPreferences).map(p => 
-        p.product_id === productId ? { ...p, display_order: value } : p
+      [selectedCustomerId]: (prev[selectedCustomerId] || productPreferences).map(p =>
+        `product_${p.product_id}` === itemKey ? { ...p, display_order: value } : p
       )
     }));
   };
 
-  const handleSaveSingleProduct = async (productId) => {
+  const handleSaveSingleProduct = async (itemKey) => {
     try {
       setLoading(true);
       const currentPrefs = customerPreferences[selectedCustomerId] || productPreferences;
-      const pref = currentPrefs.find(p => p.product_id === productId);
-      
+      const pref = currentPrefs.find(p => `product_${p.product_id}` === itemKey);
+
       if (!pref) return;
-      
-      const existingPrefs = await getPreferencesByCustomer(selectedCustomerId);
-      const existingPref = existingPrefs.data?.find(p => p.product_id === productId);
-      
+
+      const existingPrefsRes = await getPreferencesByCustomer(selectedCustomerId);
+      const existingPrefs = Array.isArray(existingPrefsRes?.data) ? existingPrefsRes.data : [];
+      const existingPref = existingPrefs.find(p => p.product_id === pref.product_id);
+
       if (pref.enabled) {
-        const data = {
-          customer_id: selectedCustomerId,
-          product_id: productId,
-          enabled: true,
-          display_order: pref.display_order || null
-        };
-        
         if (existingPref) {
-          await updatePreference(selectedCustomerId, productId, { enabled: true, display_order: pref.display_order || null });
+          await updatePreference(selectedCustomerId, pref.product_id, { enabled: true, display_order: pref.display_order || null });
         } else {
-          await createPreference(data);
+          await createPreference({
+            customer_id: selectedCustomerId,
+            product_id: pref.product_id,
+            enabled: true,
+            display_order: pref.display_order || null
+          });
         }
       } else {
         if (existingPref) {
-          await deletePreference(selectedCustomerId, productId);
+          await deletePreference(selectedCustomerId, pref.product_id);
         }
       }
-      
+
       alert('Preference saved successfully!');
       await fetchCustomerPreferences(selectedCustomerId);
     } catch (error) {
@@ -522,8 +734,8 @@ const AddProduct = () => {
     }
   };
 
-  const handleEditProduct = (productId) => {
-    setEditingPreference(productId);
+  const handleEditProduct = (itemKey) => {
+    setEditingPreference(itemKey);
   };
 
   const handleCancelEdit = () => {
@@ -531,16 +743,15 @@ const AddProduct = () => {
     fetchCustomerPreferences(selectedCustomerId);
   };
 
-  const handleDeleteProduct = async (productId) => {
+  const handleDeleteProduct = async (itemKey) => {
     try {
       setLoading(true);
-      await deletePreference(selectedCustomerId, productId);
-      setCustomerPreferences(prev => ({
-        ...prev,
-        [selectedCustomerId]: (prev[selectedCustomerId] || productPreferences).map(p => 
-          p.product_id === productId ? { ...p, enabled: false, display_order: '' } : p
-        )
-      }));
+      const currentPrefs = customerPreferences[selectedCustomerId] || productPreferences;
+      const pref = currentPrefs.find(p => `product_${p.product_id}` === itemKey);
+      if (!pref) return;
+
+      await deletePreference(selectedCustomerId, pref.product_id);
+      await fetchCustomerPreferences(selectedCustomerId);
       alert('Preference deleted successfully!');
     } catch (error) {
       alert('Failed to delete preference');
@@ -550,13 +761,40 @@ const AddProduct = () => {
   };
 
   const getCurrentCustomerPreferences = () => {
-    const allPrefs = customerPreferences[selectedCustomerId] || productPreferences;
+    const baseList = customerPreferences[selectedCustomerId] || productPreferences;
+
+    // Apply search filter first
+    let allPrefs = baseList;
     if (customerOrderSearchQuery.trim()) {
-      return allPrefs.filter(p => 
-        p.product_name.toLowerCase().includes(customerOrderSearchQuery.toLowerCase())
+      const search = customerOrderSearchQuery.toLowerCase();
+      allPrefs = allPrefs.filter(p =>
+        (p.product_name || '').toLowerCase().includes(search)
       );
     }
-    return allPrefs;
+
+    // Sort so items with a display_order appear first (1,2,3,...) then the rest
+    const sorted = [...allPrefs].sort((a, b) => {
+      const aHasOrder = a.display_order !== '' && a.display_order !== null && a.display_order !== undefined;
+      const bHasOrder = b.display_order !== '' && b.display_order !== null && b.display_order !== undefined;
+
+      if (aHasOrder && !bHasOrder) return -1;
+      if (!aHasOrder && bHasOrder) return 1;
+
+      if (aHasOrder && bHasOrder) {
+        const aNum = parseFloat(a.display_order) || 0;
+        const bNum = parseFloat(b.display_order) || 0;
+        if (aNum !== bNum) return aNum - bNum;
+      }
+
+      // Fallback: sort by product name
+      const nameA = (a.product_name || '').toLowerCase();
+      const nameB = (b.product_name || '').toLowerCase();
+      if (nameA < nameB) return -1;
+      if (nameA > nameB) return 1;
+      return 0;
+    });
+
+    return sorted;
   };
 
   const getPaginatedCustomerPreferences = () => {
@@ -590,6 +828,16 @@ const AddProduct = () => {
             </button>
             <button
               onClick={() => {
+                setActiveTab('multipleProductBox');
+                setCurrentPage(1);
+                setSearchQuery('');
+              }}
+              className={`px-5 py-2.5 rounded-lg font-medium transition-all text-sm ${activeTab === 'multipleProductBox' ? 'bg-[#0D7C66] text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}
+            >
+              Multiple Product Box
+            </button>
+            <button
+              onClick={() => {
                 setActiveTab('category');
                 setCurrentPage(1);
                 setSearchQuery('');
@@ -609,18 +857,35 @@ const AddProduct = () => {
             >
               Customer Product Order
             </button>
+            <button
+              onClick={() => {
+                setActiveTab('productCount');
+                setProductCountPage(1);
+                setProductCountSearchQuery('');
+                fetchProductCountList();
+              }}
+              className={`px-5 py-2.5 rounded-lg font-medium transition-all text-sm ${activeTab === 'productCount' ? 'bg-[#0D7C66] text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}
+            >
+              Product Count
+            </button>
           </div>
         )}
 
         {/* Header */}
-        {!selectedProduct && activeTab !== 'customerOrder' && (
+        {!selectedProduct && (activeTab === 'product' || activeTab === 'category' || activeTab === 'multipleProductBox') && (
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 mb-6">
             {/* Search */}
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#6B8782]" />
               <input
                 type="text"
-                placeholder={`Search ${activeTab === 'product' ? 'products' : 'categories'}...`}
+                placeholder={`Search ${
+                  activeTab === 'product'
+                    ? 'products'
+                    : activeTab === 'category'
+                    ? 'categories'
+                    : 'multiple product boxes'
+                }...`}
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -636,7 +901,11 @@ const AddProduct = () => {
               className="px-5 py-2.5 bg-[#0D7C66] hover:bg-[#0a6354] text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2 shadow-sm text-sm whitespace-nowrap"
             >
               <Plus className="w-4 h-4" />
-              {activeTab === 'product' ? 'Add Product' : 'Add Category'}
+              {activeTab === 'product'
+                ? 'Add Product'
+                : activeTab === 'category'
+                ? 'Add Category'
+                : 'Add Multiple Product Box'}
             </button>
           </div>
         )}
@@ -875,6 +1144,118 @@ const AddProduct = () => {
           </div>
         )}
 
+        {/* Multiple Product Box */}
+        {activeTab === 'multipleProductBox' && (
+          <div className="bg-white rounded-2xl overflow-hidden border border-[#D0E0DB]">
+            <div className="p-6">
+              <h2 className="text-lg font-semibold text-[#0D5C4D] mb-4">Multiple Product Box</h2>
+
+              {multipleProductBoxes.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-[#D4F4E8]">
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                          Multiple Product Name
+                        </th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                          Product Short
+                        </th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                          Products
+                        </th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                          Type of Packing
+                        </th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                          Status
+                        </th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {multipleProductBoxes.map((box, index) => (
+                        <tr
+                          key={box.id}
+                          className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${
+                            index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'
+                          }`}
+                        >
+                          <td className="px-6 py-4 text-sm font-semibold text-[#0D5C4D]">
+                            {box.name}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-[#0D5C4D]">
+                            {box.short || '-'}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-[#0D5C4D]">
+                            {box.productIds.length > 0 ? (
+                              <div className="flex flex-col gap-1.5 min-w-[200px]">
+                                {box.productIds.map((id) => {
+                                  const product = multiBoxProducts.find((p) => String(p.pid) === String(id));
+                                  const netWeight = box.netWeights?.[id];
+                                  return product ? (
+                                    <div key={id} className="flex items-center justify-between gap-4">
+                                      <span className="whitespace-nowrap">{product.product_name}</span>
+                                      <span className={`flex-shrink-0 px-2 py-0.5 text-xs rounded font-medium ${netWeight ? 'bg-[#D4F4E8] text-[#0D5C4D]' : 'bg-gray-100 text-gray-400'}`}>
+                                        {netWeight ? `${netWeight} kg` : '— kg'}
+                                      </span>
+                                    </div>
+                                  ) : null;
+                                })}
+                              </div>
+                            ) : '-'}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-[#0D5C4D]">
+                            {box.packingTypes.length > 0
+                              ? box.packingTypes.join(', ')
+                              : '-'}
+                          </td>
+                          <td className="px-6 py-4">
+                            <span
+                              className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${
+                                box.status === 'active' ? 'bg-[#4ED39A]' : 'bg-yellow-500'
+                              } text-white`}
+                            >
+                              <div className="w-2 h-2 rounded-full bg-white"></div>
+                              {box.status === 'active' ? 'Active' : 'Inactive'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleEditMultiBox(box)}
+                                className="p-2 text-[#0D7C66] hover:bg-[#D4F4E8] rounded-lg transition-colors"
+                                title="Edit"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteMultiBox(box)}
+                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500">
+                  No multiple product boxes found. Click "Add Multiple Product Box" to create one.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Price History View */}
         {activeTab === 'product' && selectedProduct && (
           <div className="bg-white rounded-2xl overflow-hidden border border-[#D0E0DB]">
@@ -1053,23 +1434,26 @@ const AddProduct = () => {
           <div>
             {/* Customer Tabs */}
             <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2">
-              {customers.map((customer) => (
-                <button
-                  key={customer.customer_id}
-                  onClick={() => {
-                    setSelectedCustomerId(customer.customer_id);
-                    setCustomerOrderPage(1);
-                    fetchCustomerPreferences(customer.customer_id);
-                  }}
-                  className={`px-4 py-2 rounded-lg font-medium transition-all text-sm whitespace-nowrap ${
-                    selectedCustomerId === customer.customer_id
-                      ? 'bg-[#0D7C66] text-white shadow-md'
-                      : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
-                  }`}
-                >
-                  {customer.customer_name}
-                </button>
-              ))}
+              {customers.map((customer) => {
+                const custId = customer.customer_id ?? customer.id ?? customer.cust_id;
+                return (
+                  <button
+                    key={custId}
+                    onClick={() => {
+                      setSelectedCustomerId(custId);
+                      setCustomerOrderPage(1);
+                      fetchCustomerPreferences(custId);
+                    }}
+                    className={`px-4 py-2 rounded-lg font-medium transition-all text-sm whitespace-nowrap ${
+                      selectedCustomerId === custId
+                        ? 'bg-[#0D7C66] text-white shadow-md'
+                        : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                    }`}
+                  >
+                    {customer.customer_name ?? customer.name ?? 'Customer'}
+                  </button>
+                );
+              })}
             </div>
 
             {/* Search Bar */}
@@ -1095,95 +1479,98 @@ const AddProduct = () => {
                 <table className="w-full">
                   <thead>
                     <tr className="bg-[#D4F4E8]">
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Product Name</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Name</th>
                       <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Status</th>
                       <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Display Order</th>
                       <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {getPaginatedCustomerPreferences().map((product, index) => (
-                      <tr key={product.product_id} className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'}`}>
-                        <td className="px-6 py-4">
-                          <div className="text-sm font-semibold text-[#0D5C4D]">{product.product_name}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <label className="relative inline-flex items-center cursor-pointer">
+                    {getPaginatedCustomerPreferences().map((product, index) => {
+                      const itemKey = `product_${product.product_id}`;
+                      return (
+                        <tr key={itemKey} className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'}`}>
+                          <td className="px-6 py-4">
+                            <div className="text-sm font-semibold text-[#0D5C4D]">{product.product_name}</div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={product.enabled}
+                                onChange={() => handlePreferenceToggle(itemKey)}
+                                disabled={product.enabled && editingPreference !== itemKey}
+                                className="sr-only peer"
+                              />
+                              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#0D7C66]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0D7C66] peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
+                            </label>
+                          </td>
+                          <td className="px-6 py-4">
                             <input
-                              type="checkbox"
-                              checked={product.enabled}
-                              onChange={() => handlePreferenceToggle(product.product_id)}
-                              disabled={product.enabled && editingPreference !== product.product_id}
-                              className="sr-only peer"
+                              type="number"
+                              value={product.display_order}
+                              onChange={(e) => handleDisplayOrderChange(itemKey, e.target.value)}
+                              disabled={!product.enabled || (product.enabled && editingPreference !== itemKey)}
+                              placeholder=""
+                              className="w-24 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                              min="0"
                             />
-                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#0D7C66]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0D7C66] peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
-                          </label>
-                        </td>
-                        <td className="px-6 py-4">
-                          <input
-                            type="number"
-                            value={product.display_order}
-                            onChange={(e) => handleDisplayOrderChange(product.product_id, e.target.value)}
-                            disabled={!product.enabled || (product.enabled && editingPreference !== product.product_id)}
-                            placeholder=""
-                            className="w-24 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-                            min="0"
-                          />
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            {editingPreference === product.product_id ? (
-                              <>
-                                <button
-                                  onClick={() => {
-                                    handleSaveSingleProduct(product.product_id);
-                                    setEditingPreference(null);
-                                  }}
-                                  disabled={loading}
-                                  className="px-3 py-1.5 bg-[#0D7C66] text-white rounded-lg text-xs font-medium hover:bg-[#0a6354] transition-colors disabled:opacity-50"
-                                >
-                                  Save
-                                </button>
-                                <button
-                                  onClick={handleCancelEdit}
-                                  className="px-3 py-1.5 border border-gray-300 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors"
-                                >
-                                  Cancel
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                {!product.enabled && (
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              {editingPreference === itemKey ? (
+                                <>
                                   <button
-                                    onClick={() => handleSaveSingleProduct(product.product_id)}
+                                    onClick={() => {
+                                      handleSaveSingleProduct(itemKey);
+                                      setEditingPreference(null);
+                                    }}
                                     disabled={loading}
                                     className="px-3 py-1.5 bg-[#0D7C66] text-white rounded-lg text-xs font-medium hover:bg-[#0a6354] transition-colors disabled:opacity-50"
                                   >
                                     Save
                                   </button>
-                                )}
-                                {product.enabled && (
                                   <button
-                                    onClick={() => handleEditProduct(product.product_id)}
+                                    onClick={handleCancelEdit}
                                     className="px-3 py-1.5 border border-gray-300 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors"
                                   >
-                                    Edit
+                                    Cancel
                                   </button>
-                                )}
-                                {product.enabled && (
-                                  <button
-                                    onClick={() => handleDeleteProduct(product.product_id)}
-                                    className="px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs font-medium hover:bg-red-200 transition-colors"
-                                  >
-                                    Delete
-                                  </button>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                                </>
+                              ) : (
+                                <>
+                                  {!product.enabled && (
+                                    <button
+                                      onClick={() => handleSaveSingleProduct(itemKey)}
+                                      disabled={loading}
+                                      className="px-3 py-1.5 bg-[#0D7C66] text-white rounded-lg text-xs font-medium hover:bg-[#0a6354] transition-colors disabled:opacity-50"
+                                    >
+                                      Save
+                                    </button>
+                                  )}
+                                  {product.enabled && (
+                                    <button
+                                      onClick={() => handleEditProduct(itemKey)}
+                                      className="px-3 py-1.5 border border-gray-300 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors"
+                                    >
+                                      Edit
+                                    </button>
+                                  )}
+                                  {product.enabled && (
+                                    <button
+                                      onClick={() => handleDeleteProduct(itemKey)}
+                                      className="px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs font-medium hover:bg-red-200 transition-colors"
+                                    >
+                                      Delete
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1192,7 +1579,7 @@ const AddProduct = () => {
               {getCustomerOrderTotalPages() > 1 && (
                 <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
                   <div className="text-sm text-[#6B8782]">
-                    Showing {((customerOrderPage - 1) * customerOrderItemsPerPage) + 1} to {Math.min(customerOrderPage * customerOrderItemsPerPage, getCurrentCustomerPreferences().length)} of {getCurrentCustomerPreferences().length} products
+                    Showing {((customerOrderPage - 1) * customerOrderItemsPerPage) + 1} to {Math.min(customerOrderPage * customerOrderItemsPerPage, getCurrentCustomerPreferences().length)} of {getCurrentCustomerPreferences().length} items
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -1259,19 +1646,159 @@ const AddProduct = () => {
           </div>
         )}
 
+        {/* Product Count */}
+        {activeTab === 'productCount' && (
+          <div>
+            {/* Search Bar */}
+            <div className="mb-6">
+              <div className="relative max-w-md">
+                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#6B8782]" />
+                <input
+                  type="text"
+                  placeholder="Search products..."
+                  value={productCountSearchQuery}
+                  onChange={(e) => {
+                    setProductCountSearchQuery(e.target.value);
+                    setProductCountPage(1);
+                  }}
+                  className="w-full pl-12 pr-4 py-3 bg-[#F0F4F3] border-none rounded-xl text-[#0D5C4D] placeholder-[#6B8782] focus:outline-none focus:ring-2 focus:ring-[#0D8568] text-sm"
+                />
+              </div>
+            </div>
+
+            {/* Product Table */}
+            <div className="bg-white rounded-2xl overflow-hidden border border-[#D0E0DB]">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-[#D4F4E8]">
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Product Name</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Category</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {productCountList.map((record, index) => {
+                      const status = record.product_status || 'inactive';
+                      return (
+                        <tr key={record.pid} className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'}`}>
+                          <td className="px-6 py-4">
+                            <div className="text-sm font-semibold text-[#0D5C4D]">{record.product_name}</div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="text-sm text-[#0D5C4D]">{record.categoryName || 'N/A'}</div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={status === 'active'}
+                                onChange={() => handleProductCountStatusToggle(record.pid)}
+                                disabled={productCountToggleLoading === record.pid}
+                                className="sr-only peer"
+                              />
+                              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#0D7C66]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0D7C66] peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
+                            </label>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {getProductCountTotalPages() > 1 && (
+                <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
+                  <div className="text-sm text-[#6B8782]">
+                    Showing {((productCountPage - 1) * productCountItemsPerPage) + 1} to {Math.min(productCountPage * productCountItemsPerPage, productCountTotal)} of {productCountTotal} products
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setProductCountPage(prev => Math.max(prev - 1, 1))}
+                      disabled={productCountPage === 1}
+                      className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      &lt;
+                    </button>
+
+                    {[...Array(getProductCountTotalPages())].map((_, index) => {
+                      const pageNum = index + 1;
+                      const totalPages = getProductCountTotalPages();
+                      if (totalPages <= 7) {
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => setProductCountPage(pageNum)}
+                            className={`px-4 py-2 rounded-lg font-medium ${productCountPage === pageNum
+                                ? 'bg-[#0D8568] text-white'
+                                : 'text-[#6B8782] hover:bg-[#D0E0DB]'
+                              }`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      } else {
+                        if (pageNum === 1 || pageNum === totalPages || (pageNum >= productCountPage - 1 && pageNum <= productCountPage + 1)) {
+                          return (
+                            <button
+                              key={pageNum}
+                              onClick={() => setProductCountPage(pageNum)}
+                              className={`px-4 py-2 rounded-lg font-medium ${productCountPage === pageNum
+                                  ? 'bg-[#0D8568] text-white'
+                                  : 'text-[#6B8782] hover:bg-[#D0E0DB]'
+                                }`}
+                            >
+                              {pageNum}
+                            </button>
+                          );
+                        } else if (pageNum === productCountPage - 2 || pageNum === productCountPage + 2) {
+                          return (
+                            <span key={pageNum} className="px-2 py-2 text-[#6B8782]">
+                              ...
+                            </span>
+                          );
+                        }
+                      }
+                      return null;
+                    })}
+
+                    <button
+                      onClick={() => setProductCountPage(prev => Math.min(prev + 1, getProductCountTotalPages()))}
+                      disabled={productCountPage === getProductCountTotalPages()}
+                      className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      &gt;
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Add Modal */}
         {showAddModal && (
           <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 p-4 overflow-y-auto">
             <div className="bg-white rounded-2xl p-6 max-w-md w-full my-8 max-h-[calc(100vh-4rem)]">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-[#0D5C4D]">{activeTab === 'product' ? 'Add Product' : 'Add Category'}</h3>
+                <h3 className="text-lg font-semibold text-[#0D5C4D]">
+                  {activeTab === 'product'
+                    ? 'Add Product'
+                    : activeTab === 'category'
+                    ? 'Add Category'
+                    : 'Add Multiple Product Box'}
+                </h3>
                 <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600">
                   <X className="w-5 h-5" />
                 </button>
               </div>
               <div className="overflow-y-auto max-h-[calc(100vh-12rem)] pr-2">
-                <form onSubmit={handleAddSubmit} className="space-y-4">
+                <form
+                  onSubmit={activeTab === 'multipleProductBox' ? handleMultiBoxSubmit : handleAddSubmit}
+                  className="space-y-4"
+                >
                   {activeTab === 'category' ? (
                     <>
                       <div>
@@ -1294,7 +1821,7 @@ const AddProduct = () => {
                         </select>
                       </div>
                     </>
-                  ) : (
+                  ) : activeTab === 'product' ? (
                     <>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Product Name</label>
@@ -1364,12 +1891,178 @@ const AddProduct = () => {
                           ))}
                         </div>
                       </div>
+                    </>
+                  ) : (
+                    <>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Default</label>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input type="checkbox" name="is_default" className="sr-only peer" />
-                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#0D7C66]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0D7C66]"></div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Multiple Product Name
                         </label>
+                        <input
+                          type="text"
+                          value={multiBoxFormData.name}
+                          onChange={(e) =>
+                            setMultiBoxFormData((prev) => ({ ...prev, name: e.target.value }))
+                          }
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Product Short
+                        </label>
+                        <input
+                          type="text"
+                          value={multiBoxFormData.short}
+                          onChange={(e) =>
+                            setMultiBoxFormData((prev) => ({ ...prev, short: e.target.value }))
+                          }
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Select Products
+                        </label>
+                        <div className="sell-dropdown">
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setOpenMultiBoxDropdown(prev => !prev)}
+                              className="w-full px-4 py-2.5 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] flex items-center justify-between"
+                            >
+                              <span className="text-left truncate">
+                                {multiBoxSelectedProducts.length > 0
+                                  ? `${multiBoxSelectedProducts.length} product(s) selected`
+                                  : 'Select product(s)'}
+                              </span>
+                              <ChevronDown className="w-4 h-4 text-[#6B8782] flex-shrink-0 ml-2" />
+                            </button>
+
+                            {openMultiBoxDropdown && (
+                              <div className="absolute z-50 mt-1 w-full bg-white border border-[#D0E0DB] rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                                {multiBoxProducts.length === 0 ? (
+                                  <div className="px-4 py-3 text-sm text-[#6B8782]">
+                                    No products available
+                                  </div>
+                                ) : (
+                                  multiBoxProducts.map((product) => {
+                                    const id = String(product.pid);
+                                    const isSelected = multiBoxSelectedProducts.includes(id);
+
+                                    return (
+                                      <label
+                                        key={product.pid}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className={`w-full cursor-pointer px-4 py-2.5 text-sm hover:bg-[#F0F4F3] flex items-center gap-3 ${
+                                          isSelected ? 'bg-[#D4F4E8] text-[#0D5C4D]' : 'text-[#0D5C4D]'
+                                        }`}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={isSelected}
+                                          onChange={() => {
+                                            setMultiBoxSelectedProducts((prev) =>
+                                              isSelected
+                                                ? prev.filter((pid) => pid !== id)
+                                                : [...prev, id]
+                                            );
+                                          }}
+                                          className="w-4 h-4 text-[#0D8568] focus:ring-[#0D8568] rounded flex-shrink-0"
+                                        />
+                                        <span>{product.product_name}</span>
+                                      </label>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          {multiBoxSelectedProducts.length > 0 && (
+                            <p className="mt-1 text-xs text-[#6B8782]">
+                              {multiBoxSelectedProducts.length} product(s) selected
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      {multiBoxSelectedProducts.length > 0 && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Net Weight per Product
+                          </label>
+                          <div className="space-y-2">
+                            {multiBoxSelectedProducts.map((pid) => {
+                              const product = multiBoxProducts.find((p) => String(p.pid) === String(pid));
+                              return (
+                                <div key={pid} className="flex items-center gap-3">
+                                  <span className="text-sm text-[#0D5C4D] flex-1 truncate">
+                                    {product?.product_name || pid}
+                                  </span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    placeholder="e.g. 1"
+                                    value={multiBoxProductNetWeights[pid] || ''}
+                                    onChange={(e) =>
+                                      setMultiBoxProductNetWeights((prev) => ({
+                                        ...prev,
+                                        [pid]: e.target.value
+                                      }))
+                                    }
+                                    className="w-32 px-3 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                                  />
+                                  <span className="text-xs text-gray-500 w-6">Kg</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Type of Packing
+                        </label>
+                        <div className="border border-gray-200 rounded-lg p-2 max-h-40 overflow-y-auto">
+                          {packingOptions.map((item) => (
+                            <label
+                              key={item.id}
+                              className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={multiBoxSelectedPackings.includes(item.name)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setMultiBoxSelectedPackings((prev) => [...prev, item.name]);
+                                  } else {
+                                    setMultiBoxSelectedPackings((prev) =>
+                                      prev.filter((p) => p !== item.name)
+                                    );
+                                  }
+                                }}
+                                className="w-4 h-4 text-[#0D7C66] border-gray-300 rounded focus:ring-[#0D7C66]"
+                              />
+                              <span className="text-sm text-gray-700">{item.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Status
+                        </label>
+                        <select
+                          value={multiBoxFormData.status}
+                          onChange={(e) =>
+                            setMultiBoxFormData((prev) => ({ ...prev, status: e.target.value }))
+                          }
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                        >
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                        </select>
                       </div>
                     </>
                   )}
@@ -1378,6 +2071,225 @@ const AddProduct = () => {
                       {loading ? 'Adding...' : 'Add'}
                     </button>
                     <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 px-6 py-2.5 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Multiple Product Box Modal */}
+        {showEditMultiBoxModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 p-4 overflow-y-auto">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full my-8 max-h-[calc(100vh-4rem)]">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-[#0D5C4D]">Edit Multiple Product Box</h3>
+                <button
+                  onClick={() => {
+                    setShowEditMultiBoxModal(false);
+                    setEditingMultiBoxId(null);
+                    setMultiBoxFormData({ name: '', short: '', status: 'active' });
+                    setMultiBoxSelectedProducts([]);
+                    setMultiBoxProductNetWeights({});
+                    setMultiBoxSelectedPackings([]);
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="overflow-y-auto max-h-[calc(100vh-12rem)] pr-2">
+                <form onSubmit={handleEditMultiBoxSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Multiple Product Name
+                    </label>
+                    <input
+                      type="text"
+                      value={multiBoxFormData.name}
+                      onChange={(e) =>
+                        setMultiBoxFormData((prev) => ({ ...prev, name: e.target.value }))
+                      }
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Product Short
+                    </label>
+                    <input
+                      type="text"
+                      value={multiBoxFormData.short}
+                      onChange={(e) =>
+                        setMultiBoxFormData((prev) => ({ ...prev, short: e.target.value }))
+                      }
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Select Products
+                    </label>
+                    <div className="sell-dropdown">
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setOpenMultiBoxDropdown((prev) => !prev)}
+                          className="w-full px-4 py-2.5 bg-[#F0F4F3] border border-[#D0E0DB] rounded-xl text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] flex items-center justify-between"
+                        >
+                          <span className="text-left truncate">
+                            {multiBoxSelectedProducts.length > 0
+                              ? `${multiBoxSelectedProducts.length} product(s) selected`
+                              : 'Select product(s)'}
+                          </span>
+                          <ChevronDown className="w-4 h-4 text-[#6B8782] flex-shrink-0 ml-2" />
+                        </button>
+                        {openMultiBoxDropdown && (
+                          <div className="absolute z-50 mt-1 w-full bg-white border border-[#D0E0DB] rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                            {multiBoxProducts.length === 0 ? (
+                              <div className="px-4 py-3 text-sm text-[#6B8782]">
+                                No products available
+                              </div>
+                            ) : (
+                              multiBoxProducts.map((product) => {
+                                const id = String(product.pid);
+                                const isSelected = multiBoxSelectedProducts.includes(id);
+                                return (
+                                  <label
+                                    key={product.pid}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className={`w-full cursor-pointer px-4 py-2.5 text-sm hover:bg-[#F0F4F3] flex items-center gap-3 ${
+                                      isSelected ? 'bg-[#D4F4E8] text-[#0D5C4D]' : 'text-[#0D5C4D]'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => {
+                                        setMultiBoxSelectedProducts((prev) =>
+                                          isSelected
+                                            ? prev.filter((pid) => pid !== id)
+                                            : [...prev, id]
+                                        );
+                                      }}
+                                      className="w-4 h-4 text-[#0D8568] focus:ring-[#0D8568] rounded flex-shrink-0"
+                                    />
+                                    <span>{product.product_name}</span>
+                                  </label>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      {multiBoxSelectedProducts.length > 0 && (
+                        <p className="mt-1 text-xs text-[#6B8782]">
+                          {multiBoxSelectedProducts.length} product(s) selected
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {multiBoxSelectedProducts.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Net Weight per Product
+                      </label>
+                      <div className="space-y-2">
+                        {multiBoxSelectedProducts.map((pid) => {
+                          const product = multiBoxProducts.find((p) => String(p.pid) === String(pid));
+                          return (
+                            <div key={pid} className="flex items-center gap-3">
+                              <span className="text-sm text-[#0D5C4D] flex-1 truncate">
+                                {product?.product_name || pid}
+                              </span>
+                              <input
+                                type="text"
+                                min="0"
+                                step="any"
+                                placeholder="e.g. 1"
+                                value={multiBoxProductNetWeights[pid] || ''}
+                                onChange={(e) =>
+                                  setMultiBoxProductNetWeights((prev) => ({
+                                    ...prev,
+                                    [pid]: e.target.value
+                                  }))
+                                }
+                                className="w-32 px-3 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                              />
+                              <span className="text-xs text-gray-500 w-6">kg</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Type of Packing
+                    </label>
+                    <div className="border border-gray-200 rounded-lg p-2 max-h-40 overflow-y-auto">
+                      {packingOptions.map((item) => (
+                        <label
+                          key={item.id}
+                          className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={multiBoxSelectedPackings.includes(item.name)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setMultiBoxSelectedPackings((prev) => [...prev, item.name]);
+                              } else {
+                                setMultiBoxSelectedPackings((prev) =>
+                                  prev.filter((p) => p !== item.name)
+                                );
+                              }
+                            }}
+                            className="w-4 h-4 text-[#0D7C66] border-gray-300 rounded focus:ring-[#0D7C66]"
+                          />
+                          <span className="text-sm text-gray-700">{item.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Status
+                    </label>
+                    <select
+                      value={multiBoxFormData.status}
+                      onChange={(e) =>
+                        setMultiBoxFormData((prev) => ({ ...prev, status: e.target.value }))
+                      }
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                  <div className="flex gap-3 pt-4 sticky bottom-0 bg-white">
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="flex-1 px-6 py-2.5 bg-[#0D7C66] hover:bg-[#0a6354] text-white font-semibold rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {loading ? 'Updating...' : 'Update'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowEditMultiBoxModal(false);
+                        setEditingMultiBoxId(null);
+                        setMultiBoxFormData({ name: '', short: '', status: 'active' });
+                        setMultiBoxSelectedProducts([]);
+                        setMultiBoxProductNetWeights({});
+                        setMultiBoxSelectedPackings([]);
+                      }}
+                      className="flex-1 px-6 py-2.5 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
                   </div>
                 </form>
               </div>
@@ -1548,19 +2460,6 @@ const AddProduct = () => {
                           ))}
                         </div>
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Default</label>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input
-                            type="checkbox"
-                            name="is_default"
-                            checked={editFormData.default_status || false}
-                            onChange={(e) => handleEditChange({ target: { name: 'default_status', value: e.target.checked } })}
-                            className="sr-only peer"
-                          />
-                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#0D7C66]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0D7C66]"></div>
-                        </label>
-                      </div>
                     </>
                   )}
                   <div className="flex gap-3 pt-4 sticky bottom-0 bg-white">
@@ -1602,6 +2501,36 @@ const AddProduct = () => {
                 </button>
                 <button
                   onClick={() => setShowDeleteModal(false)}
+                  className="flex-1 px-6 py-2.5 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Multiple Product Box Modal */}
+        {showDeleteMultiBoxModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-sm w-full">
+              <h3 className="text-lg font-semibold text-[#0D5C4D] mb-3">Confirm Delete</h3>
+              <p className="text-sm text-gray-600 mb-6">
+                Are you sure you want to delete this multiple product box? This action cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={confirmDeleteMultiBox}
+                  disabled={loading}
+                  className="flex-1 px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {loading ? 'Deleting...' : 'Delete'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDeleteMultiBoxModal(false);
+                    setDeletingMultiBoxId(null);
+                  }}
                   className="flex-1 px-6 py-2.5 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
                 >
                   Cancel

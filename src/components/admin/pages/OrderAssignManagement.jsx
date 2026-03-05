@@ -267,15 +267,44 @@ const OrderAssignManagement = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {(() => {
-                      const isLocalOrder = order.order_type === 'local' || order.order_type === 'LOCAL GRADE ORDER';
+                      const isLocalOrder = order.order_type === 'local' || order.order_type === 'LOCAL GRADE ORDER' || order.order_type === 'LOCAL BOX ORDER';
                       const assignment = assignments[order.oid];
-                      const allStagesCompleted = !isLocalOrder && assignment && 
+
+                      // Box / flight / flower orders: completed when all 4 stages are completed
+                      const allStagesCompleted = !isLocalOrder && assignment &&
                         assignment.stage1_status === 'completed' &&
                         assignment.stage2_status === 'completed' &&
                         assignment.stage3_status === 'completed' &&
                         assignment.stage4_status === 'completed';
 
-                      if (allStagesCompleted) {
+                      // Local orders: completed when all driver assignments have status "completed"
+                      let localOrderCompleted = false;
+                      if (isLocalOrder) {
+                        const rawLocal = localOrders[order.oid];
+                        if (rawLocal) {
+                          const summarySource = rawLocal.summary_data ?? rawLocal.summaryData;
+                          let summary = summarySource;
+
+                          if (typeof summary === 'string') {
+                            try {
+                              summary = JSON.parse(summary);
+                            } catch {
+                              summary = null;
+                            }
+                          }
+
+                          const driverGroups = summary?.driverAssignments || [];
+                          const allAssignments = driverGroups.flatMap(g => g.assignments || []);
+
+                          if (allAssignments.length > 0) {
+                            localOrderCompleted = allAssignments.every(a =>
+                              (a.status || '').toString().toLowerCase() === 'completed'
+                            );
+                          }
+                        }
+                      }
+
+                      if (allStagesCompleted || localOrderCompleted) {
                         return (
                           <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-600 text-white">
                             Completed
@@ -283,16 +312,22 @@ const OrderAssignManagement = () => {
                         );
                       }
 
+                      // Fallback to base order_status styling
+                      const statusKey = (order.order_status || '').toLowerCase();
+                      const statusClass = {
+                        pending: 'bg-purple-100 text-purple-700',
+                        confirmed: 'bg-emerald-100 text-emerald-700',
+                        processing: 'bg-yellow-100 text-yellow-700',
+                        shipped: 'bg-blue-100 text-blue-700',
+                        delivered: 'bg-emerald-600 text-white',
+                        cancelled: 'bg-red-100 text-red-700'
+                      }[statusKey] || 'bg-gray-100 text-gray-700';
+
                       return (
-                        <span className={`px-3 py-1.5 rounded-full text-xs font-medium ${{
-                          'pending': 'bg-purple-100 text-purple-700',
-                          'confirmed': 'bg-emerald-100 text-emerald-700',
-                          'processing': 'bg-yellow-100 text-yellow-700',
-                          'shipped': 'bg-blue-100 text-blue-700',
-                          'delivered': 'bg-emerald-600 text-white',
-                          'cancelled': 'bg-red-100 text-red-700'
-                        }[order.order_status] || 'bg-gray-100 text-gray-700'}`}>
-                          {order.order_status.charAt(0).toUpperCase() + order.order_status.slice(1)}
+                        <span className={`px-3 py-1.5 rounded-full text-xs font-medium ${statusClass}`}>
+                          {statusKey
+                            ? statusKey.charAt(0).toUpperCase() + statusKey.slice(1)
+                            : 'N/A'}
                         </span>
                       );
                     })()}
@@ -305,12 +340,39 @@ const OrderAssignManagement = () => {
                       const assignment = assignments[order.oid];
                       const isStage1Completed = assignment?.stage1_status === 'completed';
 
-                      // Check if all 4 stages are completed
-                      const allStagesCompleted = !isLocalOrder && assignment && 
+                      // Check if all 4 stages are completed (box / flower / flight orders)
+                      const allStagesCompleted = !isLocalOrder && assignment &&
                         assignment.stage1_status === 'completed' &&
                         assignment.stage2_status === 'completed' &&
                         assignment.stage3_status === 'completed' &&
                         assignment.stage4_status === 'completed';
+
+                      // For local orders, check if all driver assignments are completed in local order summary
+                      let localOrderCompleted = false;
+                      if (isLocalOrder) {
+                        const rawLocal = localOrders[order.oid];
+                        if (rawLocal) {
+                          const summarySource = rawLocal.summary_data ?? rawLocal.summaryData;
+                          let summary = summarySource;
+
+                          if (typeof summary === 'string') {
+                            try {
+                              summary = JSON.parse(summary);
+                            } catch {
+                              summary = null;
+                            }
+                          }
+
+                          const driverGroups = summary?.driverAssignments || [];
+                          const allAssignments = driverGroups.flatMap(g => g.assignments || []);
+
+                          if (allAssignments.length > 0) {
+                            localOrderCompleted = allAssignments.every(a =>
+                              (a.status || '').toString().toLowerCase() === 'completed'
+                            );
+                          }
+                        }
+                      }
 
                       // For local orders, check if local order data actually exists
                       const localOrderData = localOrders[order.oid];
@@ -340,7 +402,7 @@ const OrderAssignManagement = () => {
 
                       const assignNav = getAssignPath(shouldShowEdit);
 
-                      if (allStagesCompleted) {
+                      if (allStagesCompleted || localOrderCompleted) {
                         return (
                           <span className="px-4 py-2 bg-emerald-100 text-emerald-700 text-sm font-semibold rounded-lg">
                             Completed
